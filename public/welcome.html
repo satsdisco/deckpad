@@ -32,12 +32,12 @@
     background-size: 128px 128px;
   }
 
-  ::selection { background: #3CCBDA; color: #000; }
+  ::selection { background: #f7931a; color: #000; }
 
-  a { color: #c0c0c0; text-decoration: none; }
-  a:hover { color: #3CCBDA; }
+  a { color: #e0e0e0; text-decoration: none; }
+  a:hover { color: #f7931a; }
 
-  .accent { color: #3CCBDA; }
+  .accent { color: #f7931a; }
 
   header { padding: 5rem 0 2rem; }
 
@@ -51,12 +51,12 @@
   }
 
   .tagline {
-    color: #555;
-    font-size: 0.8rem;
+    color: #666;
+    font-size: 0.85rem;
   }
   .tagline::before {
     content: '> ';
-    color: #3CCBDA;
+    color: #f7931a;
   }
 
   .divider {
@@ -72,7 +72,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.2em;
-    color: #3CCBDA;
+    color: #f7931a;
     margin-bottom: 1.2rem;
   }
   h2::before { content: '# '; color: #333; }
@@ -82,24 +82,24 @@
     border-left: 2px solid #1a1a1a;
   }
   .desc {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     margin-bottom: 0.5rem;
-    color: #666;
+    color: #888;
   }
   .desc strong { color: #e0e0e0; font-weight: 700; }
-  .desc .cyan { color: #3CCBDA; }
+  .desc .hl { color: #e0e0e0; }
 
   ul { list-style: none; }
   ul li {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     margin-bottom: 0.7rem;
-    color: #666;
+    color: #888;
   }
   ul li::before {
     content: '→ ';
     color: #333;
   }
-  ul li strong { color: #e0e0e0; font-weight: 400; }
+  ul li strong { color: #e0e0e0; font-weight: 700; }
 
   .login-section {
     padding: 2rem 0;
@@ -111,19 +111,19 @@
     gap: 10px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.82rem;
-    color: #0a0a0a;
-    background: #3CCBDA;
-    border: none;
-    padding: 0.7rem 1.8rem;
+    color: #555;
+    background: transparent;
+    border: 1px solid #1a1a1a;
+    padding: 0.6rem 1.5rem;
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
-    font-weight: 700;
-    letter-spacing: -0.01em;
+    font-weight: 400;
+    letter-spacing: 0;
   }
   .login-btn:hover {
-    background: #5FE3F0;
-    color: #0a0a0a;
+    border-color: #f7931a;
+    color: #f7931a;
     transform: translateY(-1px);
   }
   .login-btn svg {
@@ -132,9 +132,9 @@
   }
 
   .login-hint {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     color: #333;
-    margin-top: 0.8rem;
+    margin-top: 1rem;
   }
   .login-hint::before { content: '// '; }
 
@@ -162,7 +162,7 @@
   }
   footer::before { content: '// '; }
   footer a { color: #333; }
-  footer a:hover { color: #3CCBDA; }
+  footer a:hover { color: #f7931a; }
 
   @media (max-width: 480px) {
     body { padding: 1.5rem; }
@@ -183,7 +183,7 @@
   <section>
     <h2>What</h2>
     <div class="desc-block">
-      <div class="desc">A platform for <strong>HTML presentations</strong>. Upload any deck — <span class="cyan">reveal.js</span>, <span class="cyan">Slidev</span>, <span class="cyan">Marp</span>, or raw HTML — and share it with your team.</div>
+      <div class="desc">A platform for <strong>HTML presentations</strong>. Upload any deck — <span class="hl">reveal.js</span>, <span class="hl">Slidev</span>, <span class="hl">Marp</span>, or raw HTML — and share it with your team.</div>
       <div class="desc">Built for <strong>hackathons</strong>, <strong>demo days</strong>, and teams that build in public.</div>
     </div>
   </section>
