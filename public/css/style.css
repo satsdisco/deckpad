@@ -760,6 +760,46 @@ a:hover { color: var(--accent); }
 }
 .sign-in-prompt a { color: var(--accent); }
 
+/* ─── Profile ────────────────────────────────────────────────────────────────── */
+.profile-header {
+  display: flex; gap: 20px; align-items: center;
+  padding: 28px 32px; background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); margin-bottom: 24px;
+  backdrop-filter: blur(8px);
+}
+.profile-avatar { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--border2); object-fit: cover; }
+.profile-info { flex: 1; }
+.profile-name { font-size: 1.2rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.profile-email { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.profile-meta { font-size: 0.72rem; color: var(--muted2); margin-top: 4px; }
+.profile-badge {
+  font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 100px;
+  background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent);
+}
+.profile-stats { display: flex; gap: 24px; margin-top: 8px; }
+.profile-stat { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+.profile-stat strong { color: var(--text); font-size: 0.9rem; margin-right: 4px; }
+.profile-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.profile-tab {
+  padding: 10px 20px; font-size: 0.82rem; font-weight: 500;
+  color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all .15s; background: none; border-top: none; border-left: none; border-right: none;
+  font-family: var(--font);
+}
+.profile-tab:hover { color: var(--text); }
+.profile-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.profile-tab-view { display: none; }
+.profile-tab-view.active { display: block; }
+
+@media (max-width: 768px) {
+  .profile-header { flex-direction: column; text-align: center; padding: 20px; }
+  .profile-stats { justify-content: center; }
+  .profile-tabs { overflow-x: auto; }
+  .profile-tab { white-space: nowrap; padding: 10px 14px; }
+}
+
 /* ─── Event Carousel ───────────────────────────────────────────────────────── */
 .event-carousel-wrap {
   position: relative; margin-bottom: 24px;

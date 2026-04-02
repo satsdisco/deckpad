@@ -27,8 +27,7 @@ for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR]) {
 
 // ─── Database ────────────────────────────────────────────────────────────────
 
-// Drop and recreate DB to apply schema changes (dev environment — seed data repopulates)
-if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH);
+// DB persists across restarts — schema uses CREATE TABLE IF NOT EXISTS
 
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
@@ -324,6 +323,8 @@ app.get('/deck/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'publ
 app.get('/build',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'build.html')));
 app.get('/event/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'event.html')));
 app.get('/project/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'project.html')));
+app.get('/profile', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
+app.get('/profile/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
 app.get('/vote',     requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'vote.html')));
 app.get('/admin',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'admin.html')));
 
@@ -741,6 +742,35 @@ app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
     id, req.params.id, req.user?.id || null, authorName, content.trim()
   );
   res.json({ id });
+});
+
+// ─── User Profile API ─────────────────────────────────────────────────────────
+
+app.get('/api/users/:id', (req, res) => {
+  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const deckCount = db.prepare('SELECT COUNT(*) as c FROM decks WHERE uploaded_by = ?').get(req.params.id).c;
+  const projectCount = db.prepare("SELECT COUNT(*) as c FROM projects WHERE builder = ?").get(user.name).c;
+  res.json({ ...user, deck_count: deckCount, project_count: projectCount });
+});
+
+app.get('/api/users/:id/decks', (req, res) => {
+  const rows = db.prepare('SELECT * FROM decks WHERE uploaded_by = ? ORDER BY created_at DESC').all(req.params.id);
+  res.json(rows);
+});
+
+app.get('/api/users/:id/projects', (req, res) => {
+  const user = db.prepare('SELECT name FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.json([]);
+  const rows = db.prepare(`
+    SELECT p.*, COALESCE(v.vote_count, 0) as votes, b.title as bounty_title
+    FROM projects p
+    LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'project' GROUP BY target_id) v ON p.id = v.target_id
+    LEFT JOIN bounties b ON p.bounty_id = b.id
+    WHERE p.builder = ?
+    ORDER BY p.created_at DESC
+  `).all(user.name);
+  res.json(rows);
 });
 
 // ─── Unified Vote API ─────────────────────────────────────────────────────────
