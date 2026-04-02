@@ -507,7 +507,7 @@ a:hover { color: var(--accent); }
   padding: 14px 16px; background: var(--surface); border: 1px solid var(--border);
   transition: border-color .15s;
 }
-.speaker-row:hover { border-color: var(--border2); }
+.speaker-row:hover { border-color: var(--border2); background: var(--surface2); }
 .speaker-row.rank-1 { border-left: 2px solid var(--accent); }
 .speaker-row.rank-2 { border-left: 2px solid var(--muted); }
 .speaker-row.rank-3 { border-left: 2px solid #8B6914; }

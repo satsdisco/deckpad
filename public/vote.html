@@ -513,7 +513,7 @@ a:hover { color: var(--accent); }
   padding: 14px 16px; background: var(--surface); border: 1px solid var(--border);
   transition: border-color .15s;
 }
-.speaker-row:hover { border-color: var(--border2); }
+.speaker-row:hover { border-color: var(--border2); background: var(--surface2); }
 .speaker-row.rank-1 { border-left: 2px solid var(--accent); }
 .speaker-row.rank-2 { border-left: 2px solid var(--muted); }
 .speaker-row.rank-3 { border-left: 2px solid #8B6914; }
@@ -816,13 +816,15 @@ function renderSpeakerRow(sp, rank) {
 
   const desc = sp.description ? `<div class="speaker-desc">${esc(sp.description)}</div>` : '';
   const links = [
-    sp.github_url ? `<a href="${esc(sp.github_url)}" target="_blank" rel="noopener" class="spk-link">⌥ GitHub</a>` : '',
-    sp.demo_url   ? `<a href="${esc(sp.demo_url)}"   target="_blank" rel="noopener" class="spk-link">↗ Demo</a>` : '',
-    sp.deck_id    ? `<a href="/deck/${esc(sp.deck_id)}" target="_blank" rel="noopener" class="spk-link btn btn-ghost btn-sm">📽 View Presentation</a>` : '',
+    sp.github_url ? `<a href="${esc(sp.github_url)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">⌥ GitHub</a>` : '',
+    sp.demo_url   ? `<a href="${esc(sp.demo_url)}"   target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : '',
+    sp.deck_id    ? `<a href="/deck/${esc(sp.deck_id)}" class="spk-link" onclick="event.stopPropagation()">📽 View Deck</a>` : '',
   ].filter(Boolean).join('');
 
+  const rowClick = sp.deck_id ? `onclick="window.location='/deck/${sp.deck_id}'" style="cursor:pointer;"` : '';
+
   return `
-    <div class="speaker-row ${rank <= 3 ? 'rank-' + rank : ''}" id="sprow-${esc(sp.id)}">
+    <div class="speaker-row ${rank <= 3 ? 'rank-' + rank : ''}" id="sprow-${esc(sp.id)}" ${rowClick}>
       <div class="rank-badge ${rankClass}">${rankLabel}</div>
       <div class="speaker-info">
         <div class="speaker-name">${esc(sp.name)}</div>
@@ -831,7 +833,7 @@ function renderSpeakerRow(sp, rank) {
         ${links ? `<div class="spk-links">${links}</div>` : ''}
       </div>
       <div class="duration-badge">${esc(sp.duration)} min</div>
-      <button class="vote-btn" id="vbtn-${esc(sp.id)}" onclick="toggleVote('speaker', '${esc(sp.id)}', this, 'vcount-${esc(sp.id)}')">
+      <button class="vote-btn" id="vbtn-${esc(sp.id)}" onclick="event.stopPropagation(); toggleVote('speaker', '${esc(sp.id)}', this, 'vcount-${esc(sp.id)}')">
         <span class="arrow">▲</span>
         <span id="vcount-${esc(sp.id)}">${sp.votes || 0}</span>
       </button>
