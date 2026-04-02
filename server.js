@@ -142,6 +142,7 @@ db.exec(`
     category    TEXT,
     bounty_id   TEXT,
     user_id     TEXT,
+    deck_id     TEXT,
     repo_url    TEXT,
     demo_url    TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -693,12 +694,13 @@ app.post('/api/projects', requireAuth, (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!builder || !builder.trim()) return res.status(400).json({ error: 'builder required' });
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO projects (id, name, builder, description, status, tags, category, bounty_id, user_id, repo_url, demo_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  const { deck_id } = req.body;
+  db.prepare(`INSERT INTO projects (id, name, builder, description, status, tags, category, bounty_id, user_id, deck_id, repo_url, demo_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, name.trim(), builder.trim(), description || null,
     status || 'building',
     Array.isArray(tags) ? tags.join(',') : (tags || null),
-    category || null, bounty_id || null, req.user?.id || null,
+    category || null, bounty_id || null, req.user?.id || null, deck_id || null,
     repo_url || repo || null, demo_url || demo || null
   );
   res.json({ id });

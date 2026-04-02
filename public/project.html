@@ -81,6 +81,7 @@ async function loadProject() {
       <div class="viewer-actions">
         ${p.repo_url ? `<a href="${esc(p.repo_url)}" target="_blank" class="btn">⌥ Repository</a>` : ''}
         ${p.demo_url ? `<a href="${esc(p.demo_url)}" target="_blank" class="btn">↗ Live Demo</a>` : ''}
+        ${p.deck_id ? `<a href="/deck/${esc(p.deck_id)}" class="btn">📽 Presentation</a>` : ''}
         <button class="vote-btn" id="projVoteBtn" onclick="voteProject()">
           <span class="arrow">▲</span>
           <span id="projVoteCount">${p.votes || 0}</span>
