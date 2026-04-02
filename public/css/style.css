@@ -726,6 +726,34 @@ a:hover { color: var(--accent); }
 }
 .sign-in-prompt a { color: var(--accent); }
 
+/* ─── Modals ──────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  justify-content: center; align-items: flex-start;
+  padding: 80px 20px; overflow-y: auto;
+}
+.modal-overlay.open { display: flex; }
+.modal-content {
+  background: #12151e; border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius-lg); padding: 28px 32px; max-width: 520px; width: 100%;
+  position: relative; box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+.modal-close {
+  position: absolute; top: 12px; right: 16px;
+  background: none; border: none; color: var(--muted); font-size: 1.4rem;
+  cursor: pointer; font-family: var(--font); line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+.modal-title { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 20px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+@media (max-width: 768px) {
+  .modal-overlay { padding: 40px 16px; }
+  .modal-content { padding: 20px; }
+}
+
 /* ─── Footer ─────────────────────────────────────────────────────────────── */
 .footer {
   text-align: center; padding: 28px; font-size: 0.65rem;

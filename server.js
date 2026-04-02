@@ -176,13 +176,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Explicit CSS route (workaround for tunnel routing issues)
-app.get('/css/style.css', (req, res) => {
-  res.setHeader('Content-Type', 'text/css');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.sendFile(path.join(ROOT, 'public', 'css', 'style.css'));
-});
-// Serve static files but NOT index.html (auth wall handles /)
+// Static files (index: false so auth wall handles /)
 app.use(express.static(path.join(ROOT, 'public'), { index: false }));
 app.use('/thumbnails', express.static(THUMBNAILS_DIR));
 
