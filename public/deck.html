@@ -24,8 +24,8 @@
   --accent-dim: rgba(247,147,26,.10);
   --danger: #e5484d;
   --success: #30a46c;
-  --radius: 0px;
-  --radius-lg: 0px;
+  --radius: 3px;
+  --radius-lg: 4px;
   --font-mono: 'JetBrains Mono', monospace;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
@@ -297,7 +297,11 @@ a:hover { color: var(--accent); }
 .viewer-info { padding: 20px 0; }
 .viewer-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; color: var(--text); }
 .viewer-meta { font-size: 0.75rem; color: var(--muted2); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
-.viewer-desc { font-size: 0.88rem; color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
+.viewer-desc {
+  font-size: 0.88rem; color: var(--muted); line-height: 1.6; margin-bottom: 16px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  padding: 14px 16px; border-radius: var(--radius-lg);
+}
 .viewer-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
 .viewer-tag {
   padding: 2px 8px; font-size: 0.65rem;
@@ -348,7 +352,11 @@ a:hover { color: var(--accent); }
 .bounty-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .bounty-title { font-size: 0.88rem; font-weight: 700; color: var(--text); flex: 1; }
 .bounty-sats { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--accent); white-space: nowrap; margin-left: 12px; }
-.bounty-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.bounty-desc {
+  font-size: 0.8rem; color: var(--muted); line-height: 1.5; margin-bottom: 10px;
+  background: rgba(255,255,255,.02); padding: 10px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
 .bounty-footer { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .bounty-status {
   font-family: var(--font-mono);
@@ -529,7 +537,11 @@ a:hover { color: var(--accent); }
 .speaker-row .speaker-project { font-size: 0.85rem; color: var(--accent); margin-top: 2px; }
 .project-link { color: var(--accent); text-decoration: none; transition: all .15s; }
 .project-link:hover { color: var(--accent-hover); text-decoration: underline; }
-.speaker-row .speaker-desc { font-size: 0.82rem; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.speaker-row .speaker-desc {
+  font-size: 0.82rem; color: var(--muted); margin-top: 6px; line-height: 1.5;
+  background: rgba(255,255,255,.02); padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
 .spk-links { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .spk-link {
   font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted);
@@ -639,6 +651,55 @@ a:hover { color: var(--accent); }
 .sign-in-btn:hover { border-color: var(--accent); color: var(--accent); }
 .sign-in-btn svg { width: 14px; height: 14px; }
 
+/* ─── Comments ───────────────────────────────────────────────────────────────── */
+.comments-section {
+  margin-top: 32px; border-top: 1px solid var(--border); padding-top: 24px;
+}
+.comments-header {
+  font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--accent);
+  margin-bottom: 16px;
+}
+.comments-header::before { content: '# '; color: var(--dim); }
+.comment-form {
+  margin-bottom: 20px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px;
+}
+.comment-form textarea {
+  width: 100%; padding: 12px 14px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 0.85rem;
+  font-family: var(--font); outline: none; resize: vertical; min-height: 70px;
+  transition: border-color .2s;
+}
+.comment-form textarea:focus { border-color: var(--accent); }
+.comment-form textarea::placeholder { color: var(--muted2); }
+.comment-form-actions {
+  display: flex; justify-content: flex-end; margin-top: 10px;
+}
+.comment-list { display: flex; flex-direction: column; gap: 2px; }
+.comment-item {
+  padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start;
+  background: rgba(255,255,255,.02); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.comment-body { flex: 1; min-width: 0; }
+.comment-author { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.comment-time {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted2); margin-left: 8px;
+}
+.comment-text {
+  font-size: 0.85rem; color: var(--text2); line-height: 1.55; margin-top: 4px;
+}
+.comment-vote { flex-shrink: 0; }
+.sign-in-prompt {
+  font-size: 0.85rem; color: var(--muted2); padding: 16px;
+  background: rgba(255,255,255,.02); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sign-in-prompt a { color: var(--accent); }
+
 /* ─── Footer ─────────────────────────────────────────────────────────────── */
 .footer {
   text-align: center; padding: 28px; font-size: 0.65rem;
@@ -700,7 +761,7 @@ a:hover { color: var(--accent); }
       <a class="btn btn-ghost" id="demoBtn" href="#" target="_blank" rel="noopener" style="display:none">↗ Live Demo</a>
       <button class="btn btn-ghost" id="embedBtn">⟨/⟩ Embed Code</button>
       <button class="btn btn-ghost" id="linkBtn">🔗 Copy Link</button>
-      <button class="btn btn-ghost" id="deleteBtn" style="color:#c04040;border-color:#4a2020;">🗑 Delete</button>
+      <button class="btn btn-danger" id="deleteBtn" style="display:none;">🗑 Delete</button>
     </div>
 
     <div class="embed-box" id="embedBox">
@@ -774,6 +835,13 @@ a:hover { color: var(--accent); }
 
     // Load comments
     loadComments(deck.id);
+
+    // Show delete only if user owns this deck
+    fetch('/api/me').then(r=>r.json()).then(d => {
+      if (d.user && deck.uploaded_by && d.user.id === deck.uploaded_by) {
+        document.getElementById('deleteBtn').style.display = '';
+      }
+    });
 
     // Delete
     document.getElementById('deleteBtn').addEventListener('click', async () => {
