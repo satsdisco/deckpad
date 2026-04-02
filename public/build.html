@@ -9,7 +9,7 @@
 <body>
 
 <header class="header">
-  <a href="/" class="logo">Lunar <span class="logo-slash">\</span> <span class="logo-accent">Pad</span></a>
+  <a href="/" class="logo">Lunar <span class="logo-slash"> \ </span><span class="logo-accent">Pad</span></a>
   <nav class="nav-tabs">
     <a href="/" class="nav-tab">Decks</a>
     <a href="/build" class="nav-tab active">Build in Public</a>
@@ -26,7 +26,6 @@
 
     <!-- Sidebar -->
     <aside class="build-sidebar">
-      <div class="sidebar-title">Build in Public</div>
       <nav class="sidebar-nav">
         <button class="sidebar-link active" data-view="events">Events</button>
         <button class="sidebar-link" data-view="projects">Projects</button>
@@ -338,8 +337,10 @@ async function loadBounties() {
             <div class="bounty-title">${esc(b.title)}</div>
             <span class="bounty-status ${statusClass}">${statusLabel}</span>
           </div>
-          <div class="bounty-sats">⚡ ${Number(b.sats_amount || 0).toLocaleString()} sats</div>
-          ${tags ? `<div class="card-tags" style="margin-top:8px">${tags}</div>` : ''}
+          <div class="bounty-bottom">
+            <div class="bounty-sats">⚡ ${Number(b.sats_amount || 0).toLocaleString()} sats</div>
+            ${tags ? `<div class="card-tags" style="margin-top:8px">${tags}</div>` : ''}
+          </div>
         </div>`;
     }).join('');
   } catch {
@@ -976,7 +977,7 @@ async function initAuth() {
         }
       });
     } else {
-      area.innerHTML = '<a href="/auth/google" class="sign-in-btn">Sign in with Google</a>';
+      area.innerHTML = '<a href="/welcome" class="sign-in-btn">Sign in</a>';
     }
   } catch(e) { console.warn('Auth check failed'); }
 }

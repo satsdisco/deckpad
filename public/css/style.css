@@ -73,7 +73,7 @@ a:hover { color: var(--accent); }
   display: flex; align-items: center; gap: 0;
 }
 .logo .mark { color: var(--accent); }
-.logo .logo-slash { color: var(--text); font-weight: 400; }
+.logo .logo-slash { color: var(--accent); font-weight: 400; }
 .logo .logo-accent { color: var(--btc-gold); }
 .logo { letter-spacing: 0; }
 
@@ -367,7 +367,10 @@ a:hover { color: var(--accent); }
   background: var(--glass); border: 1px solid var(--border);
   padding: 18px; border-radius: var(--radius-lg);
   transition: all .2s; backdrop-filter: blur(8px);
+  display: flex; flex-direction: column;
 }
+.bounty-card .bounty-footer { margin-top: auto; padding-top: 10px; }
+.bounty-bottom { margin-top: auto; }
 .bounty-card:hover { border-color: var(--border2); transform: translateY(-1px); }
 .bounty-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .bounty-title { font-size: 0.88rem; font-weight: 700; color: var(--text); flex: 1; }
