@@ -139,6 +139,8 @@ db.exec(`
     description TEXT,
     status      TEXT DEFAULT 'building',
     tags        TEXT,
+    category    TEXT,
+    bounty_id   TEXT,
     repo_url    TEXT,
     demo_url    TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -657,24 +659,26 @@ app.get('/api/events/:id/rsvps', (req, res) => {
 
 app.get('/api/projects', (req, res) => {
   const rows = db.prepare(`
-    SELECT p.*, COALESCE(v.vote_count, 0) as votes
+    SELECT p.*, COALESCE(v.vote_count, 0) as votes, b.title as bounty_title
     FROM projects p
     LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'project' GROUP BY target_id) v ON p.id = v.target_id
+    LEFT JOIN bounties b ON p.bounty_id = b.id
     ORDER BY votes DESC, p.created_at DESC
   `).all();
   res.json(rows);
 });
 
 app.post('/api/projects', requireAuth, (req, res) => {
-  const { name, builder, description, status, tags, repo_url, repo, demo_url, demo } = req.body;
+  const { name, builder, description, status, tags, category, bounty_id, repo_url, repo, demo_url, demo } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!builder || !builder.trim()) return res.status(400).json({ error: 'builder required' });
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO projects (id, name, builder, description, status, tags, repo_url, demo_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO projects (id, name, builder, description, status, tags, category, bounty_id, repo_url, demo_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, name.trim(), builder.trim(), description || null,
     status || 'building',
     Array.isArray(tags) ? tags.join(',') : (tags || null),
+    category || null, bounty_id || null,
     repo_url || repo || null, demo_url || demo || null
   );
   res.json({ id });

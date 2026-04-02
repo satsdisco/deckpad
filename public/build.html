@@ -154,6 +154,8 @@
   <div class="modal-content">
     <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
     <div class="modal-title">Submit a Project</div>
+    <div id="projBountyLabel" style="display:none;font-size:0.8rem;color:var(--btc-gold);margin-bottom:12px;padding:8px 12px;border:1px solid rgba(242,177,52,.2);border-radius:var(--radius);background:rgba(242,177,52,.05)"></div>
+    <input type="hidden" id="projBountyId" value="">
     <div class="form-row">
       <div class="form-group">
         <label>Project Name</label>
@@ -170,17 +172,33 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Status</label>
-        <select id="projStatus">
-          <option value="idea">💡 Idea</option>
-          <option value="building" selected>🔨 Building</option>
-          <option value="shipped">🚀 Shipped</option>
+        <label>Category</label>
+        <select id="projCategory">
+          <option value="">Select category...</option>
+          <option value="tool">Tool</option>
+          <option value="game">Game</option>
+          <option value="fun">Fun / Creative</option>
+          <option value="productivity">Productivity</option>
+          <option value="finance">Finance</option>
+          <option value="social">Social</option>
+          <option value="privacy">Privacy</option>
+          <option value="education">Education</option>
+          <option value="infrastructure">Infrastructure</option>
+          <option value="other">Other</option>
         </select>
       </div>
       <div class="form-group">
-        <label>Tags (comma-separated)</label>
-        <input type="text" id="projTags" placeholder="web, ai, tool">
+        <label>Status</label>
+        <select id="projStatus">
+          <option value="idea">Idea</option>
+          <option value="building" selected>Building</option>
+          <option value="shipped">Shipped</option>
+        </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>Tags (comma-separated)</label>
+      <input type="text" id="projTags" placeholder="web, bitcoin, dashboard">
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -535,25 +553,28 @@ function renderProjects(projects) {
     return;
   }
   grid.innerHTML = projects.map(p => {
-    const statusMap = { idea: ['badge-idea','💡 Idea'], building: ['badge-building','🔨 Building'], shipped: ['badge-shipped','🚀 Shipped'] };
-    const [statusCls, statusLabel] = statusMap[p.status] || ['badge-idea', p.status];
+    const statusMap = { idea: ['open','Idea'], building: ['open','Building'], shipped: ['completed','Shipped'] };
+    const [statusCls, statusLabel] = statusMap[p.status] || ['open', p.status];
     const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : Array.isArray(p.tags) ? p.tags.map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
+    const bountyTag = p.bounty_title ? `<span class="bounty-status open" style="font-size:0.6rem">⚡ ${esc(p.bounty_title)}</span>` : '';
+    const catTag = p.category ? `<span class="card-tag" style="text-transform:capitalize">${esc(p.category)}</span>` : '';
     const links = [
-      (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link">⌥ Repo</a>` : '',
-      (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link">↗ Demo</a>` : ''
+      (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">⌥ Repo</a>` : '',
+      (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : ''
     ].filter(Boolean).join('');
     return `
       <div class="project-card" id="proj-${esc(p.id)}">
-        <div class="project-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
           <div>
-            <div class="project-title">${esc(p.name)}</div>
+            <div class="project-name">${esc(p.name)}</div>
             <div class="project-builder">by ${esc(p.builder)}</div>
           </div>
-          <span class="badge ${statusCls}">${statusLabel}</span>
+          <span class="bounty-status ${statusCls}">${statusLabel}</span>
         </div>
+        ${bountyTag ? `<div style="margin-bottom:8px">${bountyTag}</div>` : ''}
         <div class="project-desc">${esc(p.description)}</div>
-        ${tags ? `<div class="card-tags">${tags}</div>` : ''}
-        ${links ? `<div class="project-links">${links}</div>` : ''}
+        <div class="card-tags" style="margin:8px 0">${catTag}${tags}</div>
+        ${links ? `<div class="spk-links" style="margin-bottom:8px">${links}</div>` : ''}
         <div class="project-footer">
           <span></span>
           <button class="project-upvote" id="proj-vote-${esc(p.id)}" onclick="voteProject('${esc(p.id)}')">
@@ -574,6 +595,8 @@ async function submitProject() {
   const desc = document.getElementById('projDesc').value.trim();
   const status = document.getElementById('projStatus').value;
   const tags = document.getElementById('projTags').value.split(',').map(t => t.trim()).filter(Boolean);
+  const category = document.getElementById('projCategory').value;
+  const bounty_id = document.getElementById('projBountyId').value || null;
   const repo = document.getElementById('projRepo').value.trim();
   const demo = document.getElementById('projDemo').value.trim();
   if (!name || !builder) return alert('Please enter a project name and builder name.');
@@ -581,11 +604,14 @@ async function submitProject() {
     const r = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, builder, description: desc, status, tags, repo, demo })
+      body: JSON.stringify({ name, builder, description: desc, status, tags, category, bounty_id, repo, demo })
     });
     if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error || 'Submission failed'); return; }
     ['projName','projBuilder','projDesc','projTags','projRepo','projDemo'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('projStatus').value = 'building';
+    document.getElementById('projCategory').value = '';
+    document.getElementById('projBountyId').value = '';
+    document.getElementById('projBountyLabel').style.display = 'none';
     document.getElementById('projectModal').classList.remove('open');
     const res = await fetch('/api/projects');
     renderProjects(await res.json());
@@ -627,10 +653,19 @@ async function expandBounty(id) {
         ${b.status === 'open' && me.user && !alreadyJoined ? '<button class="btn btn-primary" style="padding:10px 24px;font-size:0.85rem" onclick="joinBounty(\'' + esc(b.id) + '\')">⚡ Join the Hunt</button>' : ''}
         ${b.status === 'open' && !me.user ? '<a href="/auth/google" class="btn btn-primary" style="padding:10px 24px;font-size:0.85rem">Sign in to Join</a>' : ''}
         ${alreadyJoined ? '<button class="btn btn-danger" onclick="leaveBounty(\'' + esc(b.id) + '\')">✗ Leave Hunt</button><span style="font-size:0.85rem;color:var(--accent);font-weight:600">&#10003; You\'re in the hunt!</span>' : ''}
+        ${alreadyJoined ? '<button class="btn" style="margin-left:8px" onclick="openProjectForBounty(\'' + esc(b.id) + '\', \'' + esc(b.title) + '\')">Submit Project</button>' : ''}
         ${b.status !== 'open' ? '<span style="font-size:0.85rem;color:var(--muted2)">This bounty is ' + b.status + '</span>' : ''}
       </div>`;
     modal.classList.add('open');
   } catch(e) { console.error('Failed to load bounty:', e); }
+}
+
+function openProjectForBounty(bountyId, bountyTitle) {
+  document.getElementById('bountyModal').classList.remove('open');
+  document.getElementById('projBountyId').value = bountyId;
+  document.getElementById('projBountyLabel').textContent = 'For bounty: ' + bountyTitle;
+  document.getElementById('projBountyLabel').style.display = 'block';
+  document.getElementById('projectModal').classList.add('open');
 }
 
 async function joinBounty(id) {
