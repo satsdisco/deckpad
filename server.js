@@ -744,10 +744,12 @@ app.put('/api/decks/:id', requireAuth, (req, res) => {
 // GET /api/projects/:id — single project with bounty info
 app.get('/api/projects/:id', (req, res) => {
   const row = db.prepare(`
-    SELECT p.*, COALESCE(v.vote_count, 0) as votes, b.title as bounty_title
+    SELECT p.*, COALESCE(v.vote_count, 0) as votes, b.title as bounty_title,
+      d.title as deck_title, d.thumbnail as deck_thumbnail, d.entry_point as deck_entry_point
     FROM projects p
     LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'project' GROUP BY target_id) v ON p.id = v.target_id
     LEFT JOIN bounties b ON p.bounty_id = b.id
+    LEFT JOIN decks d ON p.deck_id = d.id
     WHERE p.id = ?
   `).get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });

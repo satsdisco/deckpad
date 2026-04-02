@@ -96,6 +96,17 @@ async function loadProject() {
 
       ${p.bounty_title ? `<div style="margin-bottom:16px"><span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--btc-gold);padding:4px 12px;border:1px solid rgba(242,177,52,.2);border-radius:100px;background:rgba(242,177,52,.06)">⚡ ${esc(p.bounty_title)}</span></div>` : ''}
 
+      ${p.deck_id ? `
+      <div class="viewer-frame-wrap" style="margin-bottom:20px">
+        <iframe class="viewer-frame" src="/presentations/${esc(p.deck_id)}/${esc(p.deck_entry_point || 'index.html')}" sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy"></iframe>
+        <a href="/deck/${esc(p.deck_id)}" class="viewer-fullscreen" style="opacity:1">Open Deck →</a>
+      </div>` : (p.deck_thumbnail ? `
+      <div style="margin-bottom:20px">
+        <a href="/deck/${esc(p.deck_id)}">
+          <img src="/thumbnails/${esc(p.deck_thumbnail)}" style="width:100%;border-radius:var(--radius-lg);border:1px solid var(--border)" alt="Presentation">
+        </a>
+      </div>` : '')}
+
       <div class="viewer-desc">${esc(p.description)}</div>
 
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
