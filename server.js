@@ -292,10 +292,9 @@ app.get('/api/me', (req, res) => {
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
 function requireAuth(req, res, next) {
-  return next(); // DEV: auth disabled
-//DEV   if (req.user) return next();
-//DEV   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Login required' });
-//DEV   res.redirect('/welcome');
+  if (req.user) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Login required' });
+  res.redirect('/welcome');
 }
 
 
