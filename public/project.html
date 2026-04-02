@@ -118,6 +118,7 @@ async function loadProject() {
         ${p.demo_url ? `<a href="${esc(p.demo_url)}" target="_blank" class="btn">↗ Live Demo</a>` : ''}
         ${p.deck_id ? `<a href="/deck/${esc(p.deck_id)}" class="btn">📽 Presentation</a>` : ''}
         <button class="btn" id="editProjectBtn" style="display:none" onclick="openEditProject()">Edit</button>
+        <button class="btn btn-danger" id="deleteProjectBtn" style="display:none" onclick="deleteProject()">🗑 Delete</button>
         <button class="vote-btn" id="projVoteBtn" onclick="voteProject()">
           <span class="arrow">▲</span>
           <span id="projVoteCount">${p.votes || 0}</span>
@@ -217,12 +218,20 @@ async function voteComment(id, btn) {
 
 let currentProject = null;
 
+async function deleteProject() {
+  if (!confirm('Delete this project permanently?')) return;
+  const r = await fetch('/api/projects/' + projectId, { method: 'DELETE' });
+  if (r.ok) window.location.href = '/build';
+  else alert('Failed to delete');
+}
+
 async function checkOwnership() {
   try {
     const r = await fetch('/api/me');
     const me = await r.json();
     if (me.user && currentProject && (currentProject.user_id === me.user.id || !currentProject.user_id)) {
       document.getElementById('editProjectBtn').style.display = '';
+      if (me.user.is_admin) document.getElementById('deleteProjectBtn').style.display = '';
     }
   } catch {}
 }
