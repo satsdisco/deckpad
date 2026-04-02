@@ -589,7 +589,7 @@ function renderProjectCards(projects) {
     const [statusCls, statusLabel] = statusMap[p.status] || ['open', p.status];
     const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : Array.isArray(p.tags) ? p.tags.map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
     const bountyTag = p.bounty_title ? `<span class="bounty-status open" style="font-size:0.6rem">⚡ ${esc(p.bounty_title)}</span>` : '';
-    const catTag = p.category ? `<span class="card-tag" style="text-transform:capitalize">${esc(p.category)}</span>` : '';
+    const catTag = p.category ? `<span class="card-tag cat-${esc(p.category)}">${esc(p.category)}</span>` : '';
     const links = [
       (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">⌥ Repo</a>` : '',
       (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : ''
@@ -601,7 +601,7 @@ function renderProjectCards(projects) {
             <div class="project-name">${esc(p.name)}</div>
             <div class="project-builder">by ${esc(p.builder)}</div>
           </div>
-          <span class="bounty-status ${statusCls}">${statusLabel}</span>
+          <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${statusLabel}</span>
         </div>
         ${bountyTag ? `<div style="margin-bottom:8px">${bountyTag}</div>` : ''}
         <div class="project-desc">${esc(p.description)}</div>
