@@ -1,0 +1,818 @@
+'use strict';
+
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
+const unzipper = require('unzipper');
+const { DatabaseSync } = require('node:sqlite');
+const puppeteer = require('puppeteer');
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+const PORT = 3100;
+const ROOT = __dirname;
+const UPLOADS_DIR = path.join(ROOT, 'uploads');
+const THUMBNAILS_DIR = path.join(ROOT, 'thumbnails');
+const TEMP_DIR = path.join(ROOT, 'temp');
+const DB_PATH = path.join(ROOT, 'deckpad.db');
+
+for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR]) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+// ─── Database ────────────────────────────────────────────────────────────────
+
+const db = new DatabaseSync(DB_PATH);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS votes (
+    deck_id TEXT NOT NULL,
+    voter_ip TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (deck_id, voter_ip)
+  );
+  CREATE TABLE IF NOT EXISTS decks (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    author      TEXT DEFAULT 'Anonymous',
+    description TEXT,
+    tags        TEXT,
+    filename    TEXT,
+    entry_point TEXT,
+    views       INTEGER DEFAULT 0,
+    thumbnail   TEXT,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+const stmts = {
+  insert: db.prepare(`
+    INSERT INTO decks (id, title, author, description, tags, filename, entry_point)
+    VALUES (@id, @title, @author, @description, @tags, @filename, @entry_point)
+  `),
+  getById:       db.prepare('SELECT * FROM decks WHERE id = ?'),
+  setThumbnail:  db.prepare('UPDATE decks SET thumbnail = ? WHERE id = ?'),
+  incrementView: db.prepare('UPDATE decks SET views = views + 1 WHERE id = ?'),
+  count:         db.prepare('SELECT COUNT(*) as c FROM decks'),
+  allTags:       db.prepare("SELECT tags FROM decks WHERE tags IS NOT NULL AND tags != ''"),
+  deleteDeck:    db.prepare('DELETE FROM decks WHERE id = ?'),
+  addVote:       db.prepare('INSERT OR IGNORE INTO votes (deck_id, voter_ip) VALUES (?, ?)'),
+  removeVote:    db.prepare('DELETE FROM votes WHERE deck_id = ? AND voter_ip = ?'),
+  getVoteCount:  db.prepare('SELECT COUNT(*) as c FROM votes WHERE deck_id = ?'),
+  hasVoted:      db.prepare('SELECT 1 FROM votes WHERE deck_id = ? AND voter_ip = ?'),
+  deleteVotes:   db.prepare('DELETE FROM votes WHERE deck_id = ?'),
+};
+
+// ─── Express app ─────────────────────────────────────────────────────────────
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+// Explicit CSS route (workaround for tunnel routing issues)
+app.get('/css/style.css', (req, res) => {
+  res.setHeader('Content-Type', 'text/css');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(ROOT, 'public', 'css', 'style.css'));
+});
+app.use(express.static(path.join(ROOT, 'public')));
+app.use('/thumbnails', express.static(THUMBNAILS_DIR));
+
+// ─── Presentation file serving (sandboxed) ───────────────────────────────────
+
+app.use('/presentations/:id', (req, res, next) => {
+  const deckId = req.params.id;
+  // Validate ID is a UUID-shaped string to prevent traversal at path level
+  if (!/^[0-9a-f-]{36}$/i.test(deckId)) return res.status(400).send('Invalid ID');
+
+  const deckDir = path.resolve(UPLOADS_DIR, deckId);
+  const reqPath = req.path === '/' ? '/index.html' : req.path;
+  const fullPath = path.resolve(deckDir, '.' + reqPath);
+
+  // Ensure resolved path is within the deck's directory
+  if (!fullPath.startsWith(deckDir + path.sep) && fullPath !== deckDir) {
+    return res.status(403).send('Forbidden');
+  }
+
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; " +
+    "frame-ancestors 'self';"
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  express.static(deckDir)(req, res, next);
+});
+
+// ─── Page routes ─────────────────────────────────────────────────────────────
+
+app.get('/',         (_, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
+app.get('/upload',   (_, res) => res.sendFile(path.join(ROOT, 'public', 'upload.html')));
+app.get('/deck/:id', (_, res) => res.sendFile(path.join(ROOT, 'public', 'deck.html')));
+
+// ─── Upload ──────────────────────────────────────────────────────────────────
+
+const upload = multer({
+  dest: TEMP_DIR,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.html', '.htm', '.zip'].includes(ext)) cb(null, true);
+    else cb(new Error('Only .html, .htm, or .zip files are accepted'));
+  },
+});
+
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const { title = '', author = 'Anonymous', description = '', tags = '' } = req.body;
+  if (!title.trim()) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: 'Title is required' });
+  }
+
+  const id = crypto.randomUUID();
+  const deckDir = path.join(UPLOADS_DIR, id);
+  fs.mkdirSync(deckDir, { recursive: true });
+
+  try {
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    let entryPoint = 'index.html';
+
+    if (ext === '.zip') {
+      await fs.createReadStream(req.file.path)
+        .pipe(unzipper.Extract({ path: deckDir }))
+        .promise();
+      // Keep original zip for download
+      fs.copyFileSync(req.file.path, path.join(deckDir, '_original.zip'));
+      entryPoint = detectEntryPoint(deckDir) || 'index.html';
+    } else {
+      fs.copyFileSync(req.file.path, path.join(deckDir, 'index.html'));
+      entryPoint = 'index.html';
+    }
+
+    fs.unlinkSync(req.file.path);
+
+    stmts.insert.run({
+      id,
+      title: title.trim(),
+      author: author.trim() || 'Anonymous',
+      description: description.trim(),
+      tags: tags.trim(),
+      filename: req.file.originalname,
+      entry_point: entryPoint,
+    });
+
+    // Async thumbnail — don't block the response
+    generateThumbnail(id, entryPoint).catch(err => {
+      console.warn(`[thumb] ${id}: ${err.message}`);
+    });
+
+    res.json({ id, title: title.trim() });
+  } catch (err) {
+    console.error('Upload error:', err);
+    fs.rmSync(deckDir, { recursive: true, force: true });
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+});
+
+// ─── API routes ──────────────────────────────────────────────────────────────
+
+// GET /api/decks?search=&tags=&sort=newest&page=1&limit=12
+app.get('/api/decks', (req, res) => {
+  const search = (req.query.search || '').trim();
+  const tagsFilter = (req.query.tags || '').trim();
+  const sort = req.query.sort || 'newest';
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(48, Math.max(1, parseInt(req.query.limit) || 12));
+  const offset = (page - 1) * limit;
+
+  const conditions = [];
+  const params = [];
+
+  if (search) {
+    conditions.push('(title LIKE ? OR author LIKE ? OR description LIKE ? OR tags LIKE ?)');
+    const q = `%${search}%`;
+    params.push(q, q, q, q);
+  }
+
+  if (tagsFilter) {
+    for (const tag of tagsFilter.split(',').map(t => t.trim()).filter(Boolean)) {
+      conditions.push('(tags LIKE ? OR tags LIKE ? OR tags LIKE ? OR tags = ?)');
+      params.push(`%,${tag},%`, `${tag},%`, `%,${tag}`, tag);
+    }
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const orderMap = {
+    newest: 'created_at DESC',
+    oldest: 'created_at ASC',
+    views:  'views DESC',
+    votes:  'votes DESC',
+  };
+  const order = orderMap[sort] || 'created_at DESC';
+
+  const total = db.prepare(`SELECT COUNT(*) as c FROM decks ${where}`).get(...params).c;
+  const decks  = db.prepare(`SELECT d.*, COALESCE(v.vote_count, 0) as votes FROM decks d LEFT JOIN (SELECT deck_id, COUNT(*) as vote_count FROM votes GROUP BY deck_id) v ON d.id = v.deck_id ${where ? where.replace(/\btitle\b/g, 'd.title').replace(/\bauthor\b/g, 'd.author').replace(/\bdescription\b/g, 'd.description').replace(/\btags\b/g, 'd.tags') : ''} ORDER BY ${order.replace(/\b(created_at|views)\b/g, 'd.$1')} LIMIT ? OFFSET ?`).all(...params, limit, offset);
+
+  res.json({ decks, pagination: { total, page, limit, pages: Math.ceil(total / limit) } });
+});
+
+// GET /api/decks/tags — all unique tags for filter chips
+app.get('/api/tags', (req, res) => {
+  const rows = stmts.allTags.all();
+  const tagSet = new Set();
+  for (const row of rows) {
+    row.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t));
+  }
+  res.json([...tagSet].sort());
+});
+
+// GET /api/decks/:id
+app.get('/api/decks/:id', (req, res) => {
+  const deck = stmts.getById.get(req.params.id);
+  if (!deck) return res.status(404).json({ error: 'Not found' });
+  res.json(deck);
+});
+
+// POST /api/decks/:id/view
+app.post('/api/decks/:id/view', (req, res) => {
+  stmts.incrementView.run(req.params.id);
+  res.json({ ok: true });
+});
+
+// DELETE /api/decks/:id
+app.delete('/api/decks/:id', (req, res) => {
+  const deck = stmts.getById.get(req.params.id);
+  if (!deck) return res.status(404).json({ error: 'Not found' });
+
+  // Remove files
+  const deckDir = path.join(UPLOADS_DIR, deck.id);
+  fs.rmSync(deckDir, { recursive: true, force: true });
+
+  // Remove thumbnail
+  if (deck.thumbnail) {
+    const thumbPath = path.join(THUMBNAILS_DIR, deck.thumbnail);
+    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+  }
+
+  // Remove votes and deck record
+  stmts.deleteVotes.run(deck.id);
+  stmts.deleteDeck.run(deck.id);
+  res.json({ ok: true });
+});
+
+// POST /api/decks/:id/vote
+app.post('/api/decks/:id/vote', (req, res) => {
+  const deck = stmts.getById.get(req.params.id);
+  if (!deck) return res.status(404).json({ error: 'Not found' });
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const existing = stmts.hasVoted.get(req.params.id, ip);
+  if (existing) {
+    stmts.removeVote.run(req.params.id, ip);
+  } else {
+    stmts.addVote.run(req.params.id, ip);
+  }
+  const count = stmts.getVoteCount.get(req.params.id).c;
+  res.json({ votes: count, voted: !existing });
+});
+
+// GET /api/decks/:id/votes
+app.get('/api/decks/:id/votes', (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const count = stmts.getVoteCount.get(req.params.id).c;
+  const voted = !!stmts.hasVoted.get(req.params.id, ip);
+  res.json({ votes: count, voted });
+});
+
+// GET /api/decks/:id/download
+app.get('/api/decks/:id/download', (req, res) => {
+  const deck = stmts.getById.get(req.params.id);
+  if (!deck) return res.status(404).json({ error: 'Not found' });
+
+  const deckDir = path.join(UPLOADS_DIR, deck.id);
+  const zipPath = path.join(deckDir, '_original.zip');
+  const htmlPath = path.join(deckDir, deck.entry_point);
+
+  if (fs.existsSync(zipPath)) {
+    res.download(zipPath, deck.filename || 'presentation.zip');
+  } else if (fs.existsSync(htmlPath)) {
+    res.download(htmlPath, deck.filename || 'presentation.html');
+  } else {
+    res.status(404).json({ error: 'File not found on disk' });
+  }
+});
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function detectEntryPoint(dir, depth = 0) {
+  if (depth > 4) return null;
+
+  for (const name of ['index.html', 'index.htm', 'slides.html', 'presentation.html', 'main.html']) {
+    if (fs.existsSync(path.join(dir, name))) return name;
+  }
+
+  // BFS through subdirectories
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    if (e.isFile() && /\.(html|htm)$/i.test(e.name)) {
+      return path.relative(dir, path.join(dir, e.name));
+    }
+  }
+  for (const e of entries) {
+    if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
+      const found = detectEntryPoint(path.join(dir, e.name), depth + 1);
+      if (found) return path.join(e.name, found);
+    }
+  }
+  return null;
+}
+
+async function generateThumbnail(deckId, entryPoint) {
+  // Try system Chrome first, then fall back to Puppeteer's bundled Chromium
+  const chromePaths = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ];
+  const execPath = chromePaths.find(p => fs.existsSync(p));
+  const launchOpts = {
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+  };
+  if (execPath) launchOpts.executablePath = execPath;
+  const browser = await puppeteer.launch(launchOpts);
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+    const url = `http://localhost:${PORT}/presentations/${deckId}/${entryPoint}`;
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
+    // Let animations settle
+    await new Promise(r => setTimeout(r, 800));
+    const out = path.join(THUMBNAILS_DIR, `${deckId}.webp`);
+    await page.screenshot({ path: out, type: 'webp', quality: 85 });
+    stmts.setThumbnail.run(`${deckId}.webp`, deckId);
+    console.log(`[thumb] generated for ${deckId}`);
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── Seed presentations ──────────────────────────────────────────────────────
+
+const SEED_WELCOME = /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Welcome to DeckPad</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#f5c518;--bg:#080808}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:#f0f0f0;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+.deck{width:100%;height:100%;position:relative}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+  align-items:center;padding:64px;text-align:center;opacity:0;
+  transition:opacity .35s ease;pointer-events:none}
+.slide.active{opacity:1;pointer-events:auto}
+
+/* Slide 1 */
+.s1{background:radial-gradient(ellipse at 50% 40%,#1c1400 0%,#080808 65%)}
+.s1 .logo-mark{font-size:72px;font-weight:900;color:var(--gold);letter-spacing:-2px;line-height:1}
+.s1 .tagline{margin-top:20px;font-size:22px;color:#999;font-weight:300;max-width:560px;line-height:1.5}
+.s1 .pill{margin-top:36px;display:inline-block;border:1px solid rgba(245,197,24,.35);
+  color:var(--gold);background:rgba(245,197,24,.08);padding:8px 22px;border-radius:100px;
+  font-size:13px;letter-spacing:.05em;font-weight:500}
+
+/* Slide 2 */
+.s2{background:linear-gradient(160deg,#060606,#0a0f0a)}
+.slide-title{font-size:44px;font-weight:800;line-height:1.15;margin-bottom:44px}
+.slide-title em{color:var(--gold);font-style:normal}
+.cards{display:flex;gap:24px}
+.card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:28px 24px;width:190px;text-align:center}
+.card .icon{font-size:32px;margin-bottom:14px}
+.card h3{font-size:16px;font-weight:700;margin-bottom:8px}
+.card p{font-size:13px;color:#888;line-height:1.5}
+
+/* Slide 3 */
+.s3{background:#080808}
+.fw-grid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:32px;max-width:700px}
+.fw-pill{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:9px 18px;font-size:15px;font-weight:500;color:#ccc}
+.sub{font-size:17px;color:#777;margin-top:8px}
+
+/* Slide 4 */
+.s4{background:radial-gradient(ellipse at 50% 55%,#1c1400 0%,#080808 65%)}
+.cta{margin-top:40px;background:var(--gold);color:#000;padding:15px 38px;
+  border-radius:100px;font-size:17px;font-weight:700;text-decoration:none;
+  display:inline-block;transition:transform .15s,box-shadow .15s}
+.cta:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(245,197,24,.35)}
+
+/* Nav */
+.dots{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:9px}
+.dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);cursor:pointer;
+  transition:background .2s,width .2s}
+.dot.on{width:22px;border-radius:4px;background:var(--gold)}
+.hint{position:absolute;bottom:26px;right:36px;font-size:11px;color:#444;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <div class="slide s1 active">
+    <div class="logo-mark">🎭 DeckPad</div>
+    <div class="tagline">Your stage for HTML presentations.<br>Upload, share, and present anything built for the web.</div>
+    <div class="pill">✦ Built for the Open Web</div>
+  </div>
+
+  <div class="slide s2">
+    <div class="slide-title">One place for <em>all</em> your HTML decks</div>
+    <div class="cards">
+      <div class="card"><div class="icon">⬆️</div><h3>Upload</h3><p>Drop .html or .zip, up to 50MB</p></div>
+      <div class="card"><div class="icon">🖥️</div><h3>Present</h3><p>Fullscreen sandboxed viewer</p></div>
+      <div class="card"><div class="icon">🔍</div><h3>Discover</h3><p>Search, filter, and browse decks</p></div>
+    </div>
+  </div>
+
+  <div class="slide s3">
+    <div class="slide-title">Any framework. <em>Any style.</em></div>
+    <div class="sub">DeckPad hosts them all — no conversion needed</div>
+    <div class="fw-grid">
+      <div class="fw-pill">Reveal.js</div>
+      <div class="fw-pill">Slidev</div>
+      <div class="fw-pill">Marp</div>
+      <div class="fw-pill">Impress.js</div>
+      <div class="fw-pill">Shower</div>
+      <div class="fw-pill">DZSlides</div>
+      <div class="fw-pill">Bespoke.js</div>
+      <div class="fw-pill">Custom HTML</div>
+    </div>
+  </div>
+
+  <div class="slide s4">
+    <div class="slide-title">Ready to <em>take the stage?</em></div>
+    <div class="sub">Upload your first presentation in seconds</div>
+    <a href="/upload" class="cta">Upload Your Deck →</a>
+  </div>
+
+  <div class="dots" id="dots"></div>
+  <div class="hint">← → to navigate</div>
+</div>
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const dotsEl = document.getElementById('dots');
+  let cur = 0;
+
+  slides.forEach((_,i)=>{
+    const d = document.createElement('div');
+    d.className = 'dot' + (i===0?' on':'');
+    d.onclick = ()=>go(i);
+    dotsEl.appendChild(d);
+  });
+
+  function go(n){
+    n = Math.max(0, Math.min(n, slides.length-1));
+    if(n===cur) return;
+    slides[cur].classList.remove('active');
+    cur=n;
+    slides[cur].classList.add('active');
+    [...dotsEl.children].forEach((d,i)=>d.classList.toggle('on',i===cur));
+  }
+
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' ') go(cur+1);
+    if(e.key==='ArrowLeft') go(cur-1);
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.target.closest('.dot')||e.target.closest('a')) return;
+    e.clientX > window.innerWidth/2 ? go(cur+1) : go(cur-1);
+  });
+</script>
+</body>
+</html>`;
+
+const SEED_OPENWEB = /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Building for the Open Web</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+.deck{width:100%;height:100%;position:relative;background:#0d1117}
+.slide{position:absolute;inset:0;opacity:0;transition:opacity .4s ease;pointer-events:none;
+  display:flex;flex-direction:column;justify-content:center;padding:80px}
+.slide.active{opacity:1;pointer-events:auto}
+
+:root{--blue:#4f9eff;--teal:#00e5c3;--dark:#0d1117;--surface:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e}
+
+.s1{background:linear-gradient(135deg,#0d1117 0%,#0a1628 60%,#091525 100%)}
+.s1 .eyebrow{font-size:13px;font-weight:600;color:var(--teal);letter-spacing:.12em;text-transform:uppercase;margin-bottom:24px}
+.s1 h1{font-size:64px;font-weight:900;color:var(--text);line-height:1.05;max-width:800px}
+.s1 h1 span{
+  background:linear-gradient(90deg,var(--blue),var(--teal));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s1 .meta{margin-top:40px;font-size:15px;color:var(--muted)}
+
+.s2,.s3,.s4{background:var(--dark)}
+.s2{align-items:flex-start}
+.big-stat{font-size:110px;font-weight:900;line-height:1;
+  background:linear-gradient(90deg,var(--blue),var(--teal));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-label{font-size:28px;color:var(--text);font-weight:700;margin-top:8px}
+.stat-sub{font-size:17px;color:var(--muted);margin-top:12px;max-width:520px;line-height:1.6}
+
+.s3{align-items:flex-start}
+.s3 h2{font-size:48px;font-weight:800;color:var(--text);margin-bottom:44px;line-height:1.1}
+.s3 h2 span{color:var(--blue)}
+.code-block{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:24px 28px;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:14px;
+  line-height:1.7;color:#e6edf3;max-width:640px}
+.code-block .kw{color:#ff7b72}
+.code-block .str{color:#a5d6ff}
+.code-block .cm{color:var(--muted)}
+
+.s4 h2{font-size:52px;font-weight:800;color:var(--text);margin-bottom:44px;line-height:1.1}
+.s4 h2 em{color:var(--teal);font-style:normal}
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:800px}
+.pillar{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+.pillar .num{font-size:32px;font-weight:900;color:var(--blue);line-height:1}
+.pillar h3{font-size:16px;font-weight:700;color:var(--text);margin:8px 0 6px}
+.pillar p{font-size:13px;color:var(--muted);line-height:1.5}
+
+.dots{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--border);cursor:pointer;transition:all .2s}
+.dot.on{width:20px;border-radius:4px;background:var(--blue)}
+.hint{position:absolute;bottom:26px;right:36px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <div class="slide s1 active">
+    <div class="eyebrow">Web Platform · 2024</div>
+    <h1>Building for the <span>Open Web</span></h1>
+    <div class="meta">A talk about HTML, standards, and why the web platform wins — eventually.</div>
+  </div>
+
+  <div class="slide s2">
+    <div class="big-stat">96%</div>
+    <div class="stat-label">of the world's websites run on HTML</div>
+    <div class="stat-sub">It's the most widely deployed document format in human history. And it keeps getting more powerful.</div>
+  </div>
+
+  <div class="slide s3">
+    <h2>HTML is <span>more capable</span><br>than you think</h2>
+    <div class="code-block">
+      <span class="cm">&lt;!-- Native dialog, no JS needed --&gt;</span><br>
+      <span class="kw">&lt;dialog</span> id=<span class="str">"modal"</span><span class="kw">&gt;</span><br>
+      &nbsp;&nbsp;<span class="kw">&lt;h2&gt;</span>It just works<span class="kw">&lt;/h2&gt;</span><br>
+      &nbsp;&nbsp;<span class="kw">&lt;form</span> method=<span class="str">"dialog"</span><span class="kw">&gt;</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">&lt;button&gt;</span>Close<span class="kw">&lt;/button&gt;</span><br>
+      &nbsp;&nbsp;<span class="kw">&lt;/form&gt;</span><br>
+      <span class="kw">&lt;/dialog&gt;</span>
+    </div>
+  </div>
+
+  <div class="slide s4">
+    <h2>The three <em>pillars</em></h2>
+    <div class="pillars">
+      <div class="pillar"><div class="num">01</div><h3>Interoperability</h3><p>Write once, runs in every browser, on every device, forever.</p></div>
+      <div class="pillar"><div class="num">02</div><h3>Accessibility</h3><p>Semantic HTML gives screen readers and assistive tech a fighting chance.</p></div>
+      <div class="pillar"><div class="num">03</div><h3>Longevity</h3><p>HTML from 1994 still renders. No other platform can claim that.</p></div>
+    </div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+  <div class="hint">← → to navigate</div>
+</div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const dotsEl=document.getElementById('dots');
+  let cur=0;
+  slides.forEach((_,i)=>{
+    const d=document.createElement('div');
+    d.className='dot'+(i===0?' on':'');
+    d.onclick=()=>go(i);
+    dotsEl.appendChild(d);
+  });
+  function go(n){
+    n=Math.max(0,Math.min(n,slides.length-1));
+    if(n===cur)return;
+    slides[cur].classList.remove('active');cur=n;
+    slides[cur].classList.add('active');
+    [...dotsEl.children].forEach((d,i)=>d.classList.toggle('on',i===cur));
+  }
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' ')go(cur+1);
+    if(e.key==='ArrowLeft')go(cur-1);
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.target.closest('.dot')||e.target.closest('a'))return;
+    e.clientX>window.innerWidth/2?go(cur+1):go(cur-1);
+  });
+</script>
+</body>
+</html>`;
+
+const SEED_VISUAL = /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Art of Visual Storytelling</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+.deck{width:100%;height:100%;position:relative}
+.slide{position:absolute;inset:0;opacity:0;transition:opacity .35s ease;pointer-events:none;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;
+  padding:80px;text-align:center}
+.slide.active{opacity:1;pointer-events:auto}
+
+.s1{background:linear-gradient(135deg,#1a0533,#3d0066,#660033)}
+.s1 .eyebrow{font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(255,255,255,.5);margin-bottom:24px}
+.s1 h1{font-size:72px;font-weight:900;color:#fff;line-height:1.0;max-width:720px}
+.s1 h1 em{font-style:normal;
+  background:linear-gradient(90deg,#ff6bdb,#ff9d6b);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s1 .speaker{margin-top:48px;font-size:15px;color:rgba(255,255,255,.45)}
+
+.s2{background:#0a0a0a}
+.contrast-demo{display:flex;gap:0;border-radius:16px;overflow:hidden;margin-top:40px;width:500px}
+.contrast-bad{background:#555;color:#777;padding:32px 40px;flex:1;font-size:20px;font-weight:600}
+.contrast-good{background:#0a0a0a;color:#f5c518;padding:32px 40px;flex:1;font-size:20px;font-weight:600;border:1px solid #333}
+.label-bad{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-top:8px}
+.label-good{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-top:8px}
+.s2 h2{font-size:52px;font-weight:900;color:#fff}
+.s2 h2 em{font-style:normal;color:#f5c518}
+
+.s3{background:#fafaf8;color:#1a1a1a}
+.s3 h2{font-size:84px;font-weight:900;color:#1a1a1a;line-height:1}
+.s3 h2 span{color:#e5e5e5}
+.s3 p{margin-top:32px;font-size:18px;color:#888;max-width:500px;line-height:1.6}
+
+.s4{background:linear-gradient(160deg,#040404,#0a0014)}
+.s4 .big-word{font-size:96px;font-weight:900;line-height:1;
+  background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,.2) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s4 p{margin-top:32px;font-size:20px;color:rgba(255,255,255,.4);max-width:480px;line-height:1.6}
+.s4 .rule{width:60px;height:3px;background:linear-gradient(90deg,#ff6bdb,#ff9d6b);
+  margin:32px auto 0;border-radius:2px}
+
+.dots{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.25);cursor:pointer;transition:all .2s}
+.dot.on{width:20px;border-radius:4px;background:#ff6bdb}
+.hint{position:absolute;bottom:26px;right:36px;font-size:11px;color:rgba(255,255,255,.2)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <div class="slide s1 active">
+    <div class="eyebrow">Design + Communication</div>
+    <h1>The Art of <em>Visual Storytelling</em></h1>
+    <div class="speaker">A short guide to making presentations that people actually remember</div>
+  </div>
+
+  <div class="slide s2">
+    <h2><em>Contrast</em> is everything</h2>
+    <div class="contrast-demo">
+      <div>
+        <div class="contrast-bad">Hard to read</div>
+        <div class="label-bad">Low contrast = ignored</div>
+      </div>
+      <div>
+        <div class="contrast-good">Hard to miss</div>
+        <div class="label-good">High contrast = remembered</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide s3">
+    <h2><span>Less</span> is<br>more.</h2>
+    <p>Every word you remove makes the words that remain 10× more powerful. Edit ruthlessly.</p>
+  </div>
+
+  <div class="slide s4">
+    <div class="big-word">Breathe.</div>
+    <p>White space is not empty space. It's the pause that gives your content room to land.</p>
+    <div class="rule"></div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+  <div class="hint">← → to navigate</div>
+</div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const dotsEl=document.getElementById('dots');
+  let cur=0;
+  slides.forEach((_,i)=>{
+    const d=document.createElement('div');
+    d.className='dot'+(i===0?' on':'');
+    d.onclick=()=>go(i);
+    dotsEl.appendChild(d);
+  });
+  function go(n){
+    n=Math.max(0,Math.min(n,slides.length-1));
+    if(n===cur)return;
+    slides[cur].classList.remove('active');cur=n;
+    slides[cur].classList.add('active');
+    [...dotsEl.children].forEach((d,i)=>d.classList.toggle('on',i===cur));
+  }
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' ')go(cur+1);
+    if(e.key==='ArrowLeft')go(cur-1);
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.target.closest('.dot')||e.target.closest('a'))return;
+    e.clientX>window.innerWidth/2?go(cur+1):go(cur-1);
+  });
+</script>
+</body>
+</html>`;
+
+async function seedDemoDecks() {
+  const count = db.prepare('SELECT COUNT(*) as c FROM decks').get().c;
+  if (count > 0) return;
+
+  console.log('[seed] Inserting demo presentations...');
+
+  const seeds = [
+    {
+      title: 'Welcome to DeckPad',
+      author: 'DeckPad Team',
+      description: 'An introduction to DeckPad — the HTML presentation hosting platform. Upload any HTML deck and present it to the world.',
+      tags: 'demo,welcome,intro,deckpad',
+      html: SEED_WELCOME,
+    },
+    {
+      title: 'Building for the Open Web',
+      author: 'Web Standards',
+      description: 'A talk about HTML, web standards, and why the open web platform wins. Covers interoperability, accessibility, and longevity.',
+      tags: 'web,html,standards,open-source,tech',
+      html: SEED_OPENWEB,
+    },
+    {
+      title: 'The Art of Visual Storytelling',
+      author: 'Design Thoughts',
+      description: 'A short guide to making presentations that people actually remember. Covers contrast, white space, and the power of simplicity.',
+      tags: 'design,presentations,visual,storytelling',
+      html: SEED_VISUAL,
+    },
+  ];
+
+  for (const seed of seeds) {
+    const id = crypto.randomUUID();
+    const deckDir = path.join(UPLOADS_DIR, id);
+    fs.mkdirSync(deckDir, { recursive: true });
+    fs.writeFileSync(path.join(deckDir, 'index.html'), seed.html);
+
+    stmts.insert.run({
+      id,
+      title: seed.title,
+      author: seed.author,
+      description: seed.description,
+      tags: seed.tags,
+      filename: 'index.html',
+      entry_point: 'index.html',
+    });
+
+    // Generate thumbnails after a short delay to ensure server is accepting connections
+    setTimeout(() => {
+      generateThumbnail(id, 'index.html').catch(err => {
+        console.warn(`[seed thumb] ${seed.title}: ${err.message}`);
+      });
+    }, 1500);
+  }
+
+  console.log('[seed] Done.');
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+
+const server = app.listen(PORT, () => {
+  console.log(`\n🎭 DeckPad running at http://localhost:${PORT}\n`);
+  seedDemoDecks().catch(console.error);
+});
+
+// Handle multer errors
+app.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File too large (max 50MB)' });
+  }
+  if (err.message) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+});
+
+module.exports = { app, server };
