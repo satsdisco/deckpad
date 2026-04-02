@@ -120,7 +120,7 @@
 
     // Show delete only if user owns this deck
     fetch('/api/me').then(r=>r.json()).then(d => {
-      if (d.user && deck.uploaded_by && d.user.id === deck.uploaded_by) {
+      if (d.user && (d.user.is_admin || (deck.uploaded_by && d.user.id === deck.uploaded_by))) {
         document.getElementById('deleteBtn').style.display = '';
       }
     });
