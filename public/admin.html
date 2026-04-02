@@ -88,6 +88,14 @@
         </div>
       </div>
 
+      <!-- Decks List -->
+      <div class="card">
+        <div class="card-body">
+          <div class="section-title">Decks</div>
+          <div id="decks-list"></div>
+        </div>
+      </div>
+
       <!-- Bounties List -->
       <div class="card">
         <div class="card-body">
@@ -460,6 +468,32 @@ document.getElementById('rsvp-event-select').addEventListener('change', function
 /* ─── Init ──────────────────────────────────────────────────────────────── */
 loadBounties();
 loadEvents();
+loadAdminDecks();
+
+async function loadAdminDecks() {
+  const el = document.getElementById('decks-list');
+  try {
+    const r = await fetch('/api/decks?limit=48');
+    const data = await r.json();
+    const decks = data.decks || [];
+    if (!decks.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem">No decks</div>'; return; }
+    el.innerHTML = decks.map(d => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <a href="/deck/${esc(d.id)}" style="font-size:0.85rem;font-weight:600;color:var(--text)">${esc(d.title)}</a>
+          <div style="font-size:0.72rem;color:var(--muted)">${esc(d.author||'—')} · ${d.views||0} views</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="deleteDeck('${esc(d.id)}')">Delete</button>
+      </div>`).join('');
+  } catch { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem">Failed to load</div>'; }
+}
+
+async function deleteDeck(id) {
+  if (!confirm('Delete this deck permanently?')) return;
+  const r = await fetch('/api/decks/' + id, { method: 'DELETE' });
+  if (r.ok) loadAdminDecks();
+  else alert('Failed to delete');
+}
 
 async function deleteBounty(id) {
   if (!confirm('Delete this bounty?')) return;
