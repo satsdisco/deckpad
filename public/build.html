@@ -596,16 +596,13 @@ function renderProjectCards(projects) {
     ].filter(Boolean).join('');
     return `
       <div class="project-card" id="proj-${esc(p.id)}" onclick="window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-          <div>
-            <div class="project-name">${esc(p.name)}</div>
-            <div class="project-builder">by ${esc(p.builder)}</div>
-          </div>
-          <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${statusLabel}</span>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+          <div class="project-name">${esc(p.name)}</div>
+          <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
         </div>
-        ${bountyTag ? `<div style="margin-bottom:8px">${bountyTag}</div>` : ''}
+        <div class="project-builder">by ${esc(p.builder)}</div>
         <div class="project-desc">${esc(p.description)}</div>
-        <div class="card-tags" style="margin:8px 0">${catTag}${tags}</div>
+        <div class="card-tags" style="margin-bottom:10px">${catTag}${bountyTag}${tags}</div>
         ${links ? `<div class="spk-links" style="margin-bottom:8px">${links}</div>` : ''}
         <div class="project-footer">
           <span></span>
