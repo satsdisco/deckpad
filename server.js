@@ -32,13 +32,15 @@ for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR]) {
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id         TEXT PRIMARY KEY,
-    google_id  TEXT UNIQUE,
-    email      TEXT,
-    name       TEXT,
-    avatar     TEXT,
-    is_admin   INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id            TEXT PRIMARY KEY,
+    google_id     TEXT UNIQUE,
+    username      TEXT,
+    email         TEXT,
+    name          TEXT,
+    avatar        TEXT,
+    password_hash TEXT,
+    is_admin      INTEGER DEFAULT 0,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS votes (
@@ -252,7 +254,7 @@ app.get('/auth/google', (req, res) => {
 
 app.get('/auth/google/callback', async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.redirect('/');
+  if (!code) { console.error('[auth] No code in callback'); return res.redirect('/welcome'); }
 
   try {
     // Exchange code for tokens
@@ -287,9 +289,38 @@ app.get('/auth/google/callback', async (req, res) => {
     req.session.userId = user.id;
     res.redirect('/');
   } catch (err) {
-    console.error('[auth] OAuth callback error:', err.message);
-    res.redirect('/');
+    console.error('[auth] OAuth callback error:', err);
+    res.redirect('/welcome');
   }
+});
+
+// ─── Simple Auth (username/password) ──────────────────────────────────────────
+const bcrypt = require('bcryptjs');
+
+app.post('/auth/register', async (req, res) => {
+  const { username, password, name } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.toLowerCase());
+  if (existing) return res.status(409).json({ error: 'Username taken' });
+  const id = crypto.randomUUID();
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare('INSERT INTO users (id, username, name, password_hash) VALUES (?, ?, ?, ?)').run(
+    id, username.toLowerCase(), name || username, hash
+  );
+  req.session.userId = id;
+  res.json({ ok: true });
+});
+
+app.post('/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const user = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(username.toLowerCase(), username.toLowerCase());
+  if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+  req.session.userId = user.id;
+  res.json({ ok: true });
 });
 
 app.get('/auth/logout', (req, res) => {
