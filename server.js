@@ -651,6 +651,38 @@ app.post('/api/events', requireAuth, (req, res) => {
   res.json({ id });
 });
 
+// Admin: delete event
+app.delete('/api/events/:id', requireAuth, requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM speakers WHERE event_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM rsvps WHERE event_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Admin: delete bounty
+app.delete('/api/bounties/:id', requireAuth, requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM bounty_participants WHERE bounty_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM bounties WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Delete project (owner or admin)
+app.delete('/api/projects/:id', requireAuth, (req, res) => {
+  const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Not found' });
+  if (p.user_id && p.user_id !== req.user?.id && !req.user?.is_admin) return res.status(403).json({ error: 'Not authorized' });
+  db.prepare('DELETE FROM comments WHERE deck_id = ?').run(req.params.id); // reuse comments table
+  db.prepare('DELETE FROM votes WHERE target_type = ? AND target_id = ?').run('project', req.params.id);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Delete speaker (admin only)
+app.delete('/api/speakers/:id', requireAuth, requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM speakers WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 app.get('/api/events/:id', (req, res) => {
   const event = db.prepare('SELECT *, event_type as type FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Not found' });
@@ -766,7 +798,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
 app.put('/api/projects/:id', requireAuth, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.user_id && req.user?.id !== project.user_id) return res.status(403).json({ error: 'Not your project' });
+  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) return res.status(403).json({ error: 'Not your project' });
   const { name, description, status, tags, category, repo_url, demo_url, deck_id } = req.body;
   db.prepare(`UPDATE projects SET
     name = COALESCE(?, name), description = COALESCE(?, description),
@@ -785,7 +817,7 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
 app.put('/api/decks/:id', requireAuth, (req, res) => {
   const deck = db.prepare('SELECT * FROM decks WHERE id = ?').get(req.params.id);
   if (!deck) return res.status(404).json({ error: 'Not found' });
-  if (deck.uploaded_by && req.user?.id !== deck.uploaded_by) return res.status(403).json({ error: 'Not your deck' });
+  if (deck.uploaded_by && req.user?.id !== deck.uploaded_by && !req.user?.is_admin) return res.status(403).json({ error: 'Not your deck' });
   const { title, description, tags, github_url, demo_url } = req.body;
   db.prepare(`UPDATE decks SET
     title = COALESCE(?, title), description = COALESCE(?, description),

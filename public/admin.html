@@ -168,6 +168,14 @@
         </div>
       </div>
 
+      <!-- Manage Events -->
+      <div class="card">
+        <div class="card-body">
+          <div class="section-title">Events</div>
+          <div id="events-list" style="margin-bottom:16px"></div>
+        </div>
+      </div>
+
       <!-- View RSVPs -->
       <div class="card">
         <div class="card-body">
@@ -248,8 +256,11 @@ async function loadBounties() {
         <td>${statusBadge(b.status)}</td>
         <td>${ev ? esc(ev.name) : '—'}</td>
         <td>${fmtDate(b.createdAt ?? b.created_at)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteBounty('${esc(b.id)}')">Delete</button></td>
       </tr>`;
     }).join('');
+    // Add header
+    document.querySelector('#bounties-tbody').closest('table').querySelector('thead tr').innerHTML += '<th></th>';
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Could not load bounties</td></tr>';
   }
@@ -330,6 +341,19 @@ async function loadEvents() {
 
     if (current && sel.value === current) {
       loadRsvps(current);
+    }
+
+    // Render events list with delete buttons
+    const el = document.getElementById('events-list');
+    if (el) {
+      el.innerHTML = list.length ? list.map(ev => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text)">${esc(ev.name)}</div>
+            <div style="font-size:0.75rem;color:var(--muted)">${fmtDate(ev.date)} · ${esc(ev.event_type||ev.type||'event')}</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="deleteEvent('${esc(ev.id)}')">Delete</button>
+        </div>`).join('') : '<div style="color:var(--muted);font-size:0.85rem">No events</div>';
     }
 
     // Refresh bounties to show event names
@@ -436,6 +460,20 @@ document.getElementById('rsvp-event-select').addEventListener('change', function
 /* ─── Init ──────────────────────────────────────────────────────────────── */
 loadBounties();
 loadEvents();
+
+async function deleteBounty(id) {
+  if (!confirm('Delete this bounty?')) return;
+  const r = await fetch('/api/bounties/' + id, { method: 'DELETE' });
+  if (r.ok) loadBounties();
+  else alert('Failed to delete');
+}
+
+async function deleteEvent(id) {
+  if (!confirm('Delete this event and all its speakers/RSVPs?')) return;
+  const r = await fetch('/api/events/' + id, { method: 'DELETE' });
+  if (r.ok) loadEvents();
+  else alert('Failed to delete');
+}
 </script>
 <script>
 // Auth
