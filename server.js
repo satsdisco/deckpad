@@ -457,6 +457,9 @@ app.get('/api/tags', requireAuth, (req, res) => {
 app.get('/api/decks/:id', (req, res) => {
   const deck = stmts.getById.get(req.params.id);
   if (!deck) return res.status(404).json({ error: 'Not found' });
+  // Find linked project
+  const project = db.prepare('SELECT id, name, builder FROM projects WHERE deck_id = ? LIMIT 1').get(req.params.id);
+  if (project) { deck.project_id = project.id; deck.project_name = project.name; deck.project_builder = project.builder; }
   res.json(deck);
 });
 
