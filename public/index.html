@@ -3,20 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DeckPad — HTML Presentation Gallery</title>
+<title>LunarPad — Build. Ship. Earn sats.</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
 <header class="header">
-  <a href="/" class="logo"><span class="mark">◆</span> DeckPad</a>
+  <a href="/" class="logo">Lunar<span class="logo-slash">\</span><span class="logo-accent">Pad</span></a>
   <nav class="nav-tabs">
     <a href="/" class="nav-tab active">Decks</a>
     <a href="/build" class="nav-tab">Build in Public</a>
     
   </nav>
   <div class="header-actions" id="authArea">
-    <a href="/upload" class="btn btn-primary">⬆ Upload Deck</a>
+    
     <div id="userArea"></div>
   </div>
 </header>
@@ -39,7 +39,7 @@
   <div class="pagination" id="pagination"></div>
 </div>
 
-<footer class="footer">DeckPad — Your stage for HTML presentations</footer>
+<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
 
 <script>
   let currentPage = 1;
@@ -91,7 +91,7 @@
           <div class="icon">🎭</div>
           <h3>No presentations yet</h3>
           <p>Be the first to upload an HTML presentation</p>
-          <a href="/upload" class="btn btn-primary">Upload Your Deck</a>
+          <button class="btn btn-primary" onclick="document.getElementById('uploadModal').classList.add('open')">Upload Your Deck</button>
         </div>`;
       return;
     }
@@ -193,6 +193,152 @@ async function initAuth() {
   } catch(e) { console.warn('Auth check failed'); }
 }
 initAuth();
+</script>
+<button class="fab" title="Upload Deck" onclick="document.getElementById('uploadModal').classList.add('open')"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="fab-label">Upload Deck</span></button>
+
+<div class="modal-overlay" id="uploadModal">
+  <div class="modal-content" style="max-width:560px;">
+    <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
+    <div class="modal-title" style="font-family:var(--font-mono);font-size:0.85rem;font-weight:700;margin-bottom:16px;color:var(--text);">Upload a Presentation</div>
+
+    <form id="uploadForm">
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📂</div>
+        <div class="label">Drop your file here</div>
+        <div class="hint">or click to browse &nbsp;·&nbsp; .html or .zip up to 50MB</div>
+        <div class="file-name" id="fileName"></div>
+        <input type="file" id="fileInput" accept=".html,.htm,.zip" hidden>
+      </div>
+
+      <div class="form-group">
+        <label>Title *</label>
+        <input type="text" id="title" placeholder="My Amazing Presentation" required>
+      </div>
+      <div class="form-group">
+        <label>Author</label>
+        <input type="text" id="author" placeholder="Your name or handle">
+      </div>
+      <div class="form-group">
+        <label>Tags</label>
+        <input type="text" id="tags" placeholder="design, tech, keynote (comma-separated)">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="description" placeholder="What's this presentation about?"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>GitHub URL <span style="font-weight:400;color:var(--muted2)">(optional)</span></label>
+          <input type="url" id="github_url" placeholder="https://github.com/you/project">
+        </div>
+        <div class="form-group">
+          <label>Live Demo URL <span style="font-weight:400;color:var(--muted2)">(optional)</span></label>
+          <input type="url" id="demo_url" placeholder="https://yourproject.app">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;justify-content:center;padding:14px;" disabled>
+        Upload Deck
+      </button>
+
+      <div class="upload-progress" id="progress">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText">Uploading...</div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileName = document.getElementById('fileName');
+  const submitBtn = document.getElementById('submitBtn');
+  let selectedFile = null;
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) setFile(fileInput.files[0]);
+  });
+
+  function setFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['html', 'htm', 'zip'].includes(ext)) { alert('Only .html, .htm, or .zip files accepted'); return; }
+    selectedFile = file;
+    fileName.textContent = '📄 ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+    fileName.style.display = 'block';
+    submitBtn.disabled = false;
+    const titleInput = document.getElementById('title');
+    if (!titleInput.value) {
+      titleInput.value = file.name.replace(/\.(html|htm|zip)$/i, '').replace(/[-_]/g, ' ');
+    }
+  }
+
+  document.getElementById('uploadForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!selectedFile) return;
+    const title = document.getElementById('title').value.trim();
+    if (!title) { alert('Title is required'); return; }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading...';
+    const progress = document.getElementById('progress');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    progress.style.display = 'block';
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('title', title);
+    formData.append('author', document.getElementById('author').value.trim());
+    formData.append('tags', document.getElementById('tags').value.trim());
+    formData.append('description', document.getElementById('description').value.trim());
+    formData.append('github_url', document.getElementById('github_url').value.trim());
+    formData.append('demo_url', document.getElementById('demo_url').value.trim());
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          progressFill.style.width = pct + '%';
+          progressText.textContent = pct < 100 ? 'Uploading... ' + pct + '%' : 'Processing...';
+        }
+      });
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = JSON.parse(xhr.responseText);
+          progressFill.style.width = '100%';
+          progressText.textContent = 'Done! Redirecting...';
+          setTimeout(() => { window.location.href = '/deck/' + data.id; }, 500);
+        } else {
+          const err = JSON.parse(xhr.responseText);
+          alert(err.error || 'Upload failed');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Upload Deck';
+          progress.style.display = 'none';
+        }
+      });
+      xhr.addEventListener('error', () => {
+        alert('Upload failed');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Upload Deck';
+        progress.style.display = 'none';
+      });
+      xhr.send(formData);
+    } catch (err) {
+      alert(err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Upload Deck';
+      progress.style.display = 'none';
+    }
+  });
 </script>
 </body>
 </html>

@@ -3,20 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Project — DeckPad</title>
+<title>Project — LunarPad</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
 <header class="header">
-  <a href="/" class="logo"><span class="mark">◆</span> DeckPad</a>
+  <a href="/" class="logo">Lunar<span class="logo-slash">\</span><span class="logo-accent">Pad</span></a>
   <nav class="nav-tabs">
     <a href="/" class="nav-tab">Decks</a>
     <a href="/build" class="nav-tab active">Build in Public</a>
     
   </nav>
   <div class="header-actions" id="authArea">
-    <a href="/upload" class="btn btn-primary">⬆ Upload Deck</a>
+    
     <div id="userArea"></div>
   </div>
 </header>
@@ -29,7 +29,7 @@
   </div>
 </div>
 
-<footer class="footer">DeckPad — Your stage for HTML presentations</footer>
+<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
 
 <script>
 const projectId = window.location.pathname.split('/').pop();
@@ -52,7 +52,7 @@ async function loadProject() {
     if (!res.ok) { document.getElementById('projectContent').innerHTML = '<div class="empty-state"><h3>Project not found</h3></div>'; return; }
     const p = await res.json();
 
-    document.title = p.name + ' — DeckPad';
+    document.title = p.name + ' — LunarPad';
 
     const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
     const catClass = p.category ? 'cat-' + p.category : '';
@@ -196,5 +196,6 @@ async function initAuth() {
 }
 initAuth();
 </script>
+<a href="/build" class="fab" title="Back to Build"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="fab-label">Submit Project</span></a>
 </body>
 </html>
