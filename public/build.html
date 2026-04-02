@@ -621,9 +621,10 @@ async function expandBounty(id) {
         ${participants.length ? participants.map(p => '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:0.85rem;color:var(--text)">' + esc(p.user_name) + '</span></div>').join('') : '<div style="font-size:0.82rem;color:var(--muted2);padding:8px 0">No participants yet</div>'}
       </div>
       <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
-        ${b.status === 'open' && !alreadyJoined ? '<button class="btn btn-primary" onclick="joinBounty(\'' + esc(b.id) + '\')">Join Bounty</button>' : ''}
-        ${alreadyJoined ? '<button class="btn btn-danger" onclick="leaveBounty(\'' + esc(b.id) + '\')">Leave</button><span style="font-size:0.8rem;color:var(--accent)">&#10003; Participating</span>' : ''}
-        ${b.status !== 'open' ? '<span style="font-size:0.8rem;color:var(--muted2)">Bounty ' + b.status + '</span>' : ''}
+        ${b.status === 'open' && me.user && !alreadyJoined ? '<button class="btn btn-primary" style="padding:10px 24px;font-size:0.85rem" onclick="joinBounty(\'' + esc(b.id) + '\')">⚡ Join the Hunt</button>' : ''}
+        ${b.status === 'open' && !me.user ? '<a href="/auth/google" class="btn btn-primary" style="padding:10px 24px;font-size:0.85rem">Sign in to Join</a>' : ''}
+        ${alreadyJoined ? '<button class="btn btn-danger" onclick="leaveBounty(\'' + esc(b.id) + '\')">✗ Leave Hunt</button><span style="font-size:0.85rem;color:var(--accent);font-weight:600">&#10003; You\'re in the hunt!</span>' : ''}
+        ${b.status !== 'open' ? '<span style="font-size:0.85rem;color:var(--muted2)">This bounty is ' + b.status + '</span>' : ''}
       </div>`;
     modal.classList.add('open');
   } catch(e) { console.error('Failed to load bounty:', e); }
