@@ -294,7 +294,7 @@ app.get('/auth/google/callback', async (req, res) => {
 
 app.get('/auth/logout', (req, res) => {
   req.session = null;
-  res.redirect('/');
+  res.redirect('/welcome');
 });
 
 app.get('/api/me', (req, res) => {
