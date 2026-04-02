@@ -38,6 +38,7 @@ db.exec(`
     email      TEXT,
     name       TEXT,
     avatar     TEXT,
+    is_admin   INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -281,7 +282,7 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (req.user) {
-    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar } });
+    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin } });
   } else {
     res.json({ user: null });
   }
@@ -295,6 +296,20 @@ function requireAuth(req, res, next) {
 //DEV   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Login required' });
 //DEV   res.redirect('/welcome');
 }
+
+
+function requireAdmin(req, res, next) {
+  if (req.user && req.user.is_admin) return next();
+  res.status(403).json({ error: "Admin access required" });
+}
+
+// Promote user to admin by email
+app.post("/api/admin/promote", function(req, res) {
+  var email = req.body.email;
+  if (!email) return res.status(400).json({ error: "email required" });
+  db.prepare("UPDATE users SET is_admin = 1 WHERE email = ?").run(email);
+  res.json({ ok: true });
+});
 
 // ─── Page routes ─────────────────────────────────────────────────────────────
 
