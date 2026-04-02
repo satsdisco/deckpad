@@ -5,3 +5,4 @@ temp/
 deckpad.db
 .DS_Store
 *.log
+.env

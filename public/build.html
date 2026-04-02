@@ -623,6 +623,43 @@ h1, h2, h3, h4 {
   background: var(--btc-gold-dim); color: var(--btc-gold);
   border: 1px solid rgba(242,177,52,.2);
 }
+.user-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 4px; border-radius: 100px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 13px; color: var(--text); cursor: pointer;
+  transition: border-color .15s;
+}
+.user-pill:hover { border-color: var(--accent); }
+.user-pill img {
+  width: 26px; height: 26px; border-radius: 50%;
+  object-fit: cover;
+}
+.user-menu {
+  position: relative; display: inline-block;
+}
+.user-dropdown {
+  display: none; position: absolute; right: 0; top: 100%; margin-top: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px; min-width: 160px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4); z-index: 200;
+}
+.user-dropdown.open { display: block; }
+.user-dropdown a {
+  display: block; padding: 8px 12px; border-radius: 6px;
+  font-size: 13px; color: var(--text); text-decoration: none;
+}
+.user-dropdown a:hover { background: var(--void); color: var(--accent); }
+.sign-in-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px; font-size: 13px;
+  font-weight: 500; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); cursor: pointer;
+  text-decoration: none; transition: all .15s;
+  font-family: var(--font-body);
+}
+.sign-in-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sign-in-btn svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
@@ -634,8 +671,9 @@ h1, h2, h3, h4 {
     <a href="/build" class="nav-tab active">Build in Public</a>
     <a href="/vote" class="nav-tab">Vote</a>
   </nav>
-  <div class="header-actions">
+  <div class="header-actions" id="authArea">
     <a href="/upload" class="btn btn-primary">⬆ Upload Deck</a>
+    <div id="userArea"></div>
   </div>
 </header>
 
@@ -1198,6 +1236,37 @@ document.addEventListener('DOMContentLoaded', () => {
   loadEvents();
   loadProjects();
 });
+</script>
+<script>
+// Auth
+async function initAuth() {
+  try {
+    const res = await fetch('/api/me');
+    const data = await res.json();
+    const area = document.getElementById('userArea');
+    if (!area) return;
+    if (data.user) {
+      area.innerHTML = `
+        <div class="user-menu">
+          <div class="user-pill" onclick="this.parentElement.querySelector('.user-dropdown').classList.toggle('open')">
+            <img src="${data.user.avatar || ''}" alt="" onerror="this.style.display='none'">
+            <span>${data.user.name || data.user.email}</span>
+          </div>
+          <div class="user-dropdown">
+            <a href="/auth/logout">Sign out</a>
+          </div>
+        </div>`;
+      document.addEventListener('click', e => {
+        if (!e.target.closest('.user-menu')) {
+          document.querySelectorAll('.user-dropdown').forEach(d => d.classList.remove('open'));
+        }
+      });
+    } else {
+      area.innerHTML = '<a href="/auth/google" class="sign-in-btn">Sign in with Google</a>';
+    }
+  } catch(e) { console.warn('Auth check failed'); }
+}
+initAuth();
 </script>
 </body>
 </html>

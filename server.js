@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -8,6 +10,7 @@ const multer = require('multer');
 const unzipper = require('unzipper');
 const { DatabaseSync } = require('node:sqlite');
 const puppeteer = require('puppeteer');
+const cookieSession = require('cookie-session');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +32,15 @@ if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH);
 
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id         TEXT PRIMARY KEY,
+    google_id  TEXT UNIQUE,
+    email      TEXT,
+    name       TEXT,
+    avatar     TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS votes (
     target_type TEXT NOT NULL,
     target_id   TEXT NOT NULL,
@@ -48,6 +60,7 @@ db.exec(`
     thumbnail   TEXT,
     github_url  TEXT,
     demo_url    TEXT,
+    uploaded_by TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
@@ -114,9 +127,12 @@ db.exec(`
 
 const stmts = {
   insert: db.prepare(`
-    INSERT INTO decks (id, title, author, description, tags, filename, entry_point, github_url, demo_url)
-    VALUES (@id, @title, @author, @description, @tags, @filename, @entry_point, @github_url, @demo_url)
+    INSERT INTO decks (id, title, author, description, tags, filename, entry_point, github_url, demo_url, uploaded_by)
+    VALUES (@id, @title, @author, @description, @tags, @filename, @entry_point, @github_url, @demo_url, @uploaded_by)
   `),
+  findUserByGoogleId: db.prepare('SELECT * FROM users WHERE google_id = ?'),
+  insertUser:         db.prepare('INSERT INTO users (id, google_id, email, name, avatar) VALUES (?, ?, ?, ?, ?)'),
+  getUserById:        db.prepare('SELECT * FROM users WHERE id = ?'),
   getById:       db.prepare('SELECT * FROM decks WHERE id = ?'),
   setThumbnail:  db.prepare('UPDATE decks SET thumbnail = ? WHERE id = ?'),
   incrementView: db.prepare('UPDATE decks SET views = views + 1 WHERE id = ?'),
@@ -135,6 +151,20 @@ const stmts = {
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use(cookieSession({
+  name: 'deckpad_session',
+  keys: [process.env.SESSION_SECRET || 'dev-secret-change-me'],
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+}));
+
+app.use((req, res, next) => {
+  if (req.session && req.session.userId) {
+    req.user = stmts.getUserById.get(req.session.userId);
+  }
+  next();
+});
+
 // Explicit CSS route (workaround for tunnel routing issues)
 app.get('/css/style.css', (req, res) => {
   res.setHeader('Content-Type', 'text/css');
@@ -169,6 +199,75 @@ app.use('/presentations/:id', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   express.static(deckDir)(req, res, next);
+});
+
+// ─── Auth routes ─────────────────────────────────────────────────────────────
+
+app.get('/auth/google', (req, res) => {
+  const params = new URLSearchParams({
+    client_id:     process.env.GOOGLE_CLIENT_ID,
+    redirect_uri:  (process.env.BASE_URL || `http://localhost:${PORT}`) + '/auth/google/callback',
+    response_type: 'code',
+    scope:         'openid email profile',
+    access_type:   'offline',
+    prompt:        'consent',
+  });
+  res.redirect('https://accounts.google.com/o/oauth2/v2/auth?' + params.toString());
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect('/');
+
+  try {
+    // Exchange code for tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id:     process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri:  (process.env.BASE_URL || `http://localhost:${PORT}`) + '/auth/google/callback',
+        grant_type:    'authorization_code',
+      }),
+    });
+    const tokens = await tokenRes.json();
+    if (!tokens.access_token) throw new Error('No access token');
+
+    // Get user info
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: 'Bearer ' + tokens.access_token },
+    });
+    const profile = await userRes.json();
+
+    // Find or create user
+    let user = stmts.findUserByGoogleId.get(profile.id);
+    if (!user) {
+      const id = crypto.randomUUID();
+      stmts.insertUser.run(id, profile.id, profile.email || null, profile.name || null, profile.picture || null);
+      user = stmts.getUserById.get(id);
+    }
+
+    req.session.userId = user.id;
+    res.redirect('/');
+  } catch (err) {
+    console.error('[auth] OAuth callback error:', err.message);
+    res.redirect('/');
+  }
+});
+
+app.get('/auth/logout', (req, res) => {
+  req.session = null;
+  res.redirect('/');
+});
+
+app.get('/api/me', (req, res) => {
+  if (req.user) {
+    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar } });
+  } else {
+    res.json({ user: null });
+  }
 });
 
 // ─── Page routes ─────────────────────────────────────────────────────────────
@@ -233,6 +332,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       entry_point: entryPoint,
       github_url: github_url.trim() || null,
       demo_url: demo_url.trim() || null,
+      uploaded_by: req.user ? req.user.id : null,
     });
 
     // Async thumbnail — don't block the response
@@ -338,9 +438,9 @@ app.delete('/api/decks/:id', (req, res) => {
 
 // GET /api/decks/:id/votes (kept for deck.html compatibility)
 app.get('/api/decks/:id/votes', (req, res) => {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const voter = req.user ? req.user.id : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
   const count = stmts.getVoteCount.get('deck', req.params.id).c;
-  const voted = !!stmts.hasVoted.get('deck', req.params.id, ip);
+  const voted = !!stmts.hasVoted.get('deck', req.params.id, voter);
   res.json({ votes: count, voted });
 });
 
@@ -535,12 +635,12 @@ app.post('/api/vote', (req, res) => {
   if (!['deck', 'speaker', 'project'].includes(type) || !id) {
     return res.status(400).json({ error: 'type (deck|speaker|project) and id required' });
   }
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-  const existing = stmts.hasVoted.get(type, id, ip);
+  const voter = req.user ? req.user.id : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
+  const existing = stmts.hasVoted.get(type, id, voter);
   if (existing) {
-    stmts.removeVote.run(type, id, ip);
+    stmts.removeVote.run(type, id, voter);
   } else {
-    stmts.addVote.run(type, id, ip);
+    stmts.addVote.run(type, id, voter);
   }
   const count = stmts.getVoteCount.get(type, id).c;
   res.json({ votes: count, voted: !existing });
@@ -552,9 +652,9 @@ app.get('/api/vote/count', (req, res) => {
   if (!['deck', 'speaker', 'project'].includes(type) || !id) {
     return res.status(400).json({ error: 'type and id required' });
   }
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const voter = req.user ? req.user.id : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
   const count = stmts.getVoteCount.get(type, id).c;
-  const voted = !!stmts.hasVoted.get(type, id, ip);
+  const voted = !!stmts.hasVoted.get(type, id, voter);
   res.json({ votes: count, voted });
 });
 
