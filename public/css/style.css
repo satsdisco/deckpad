@@ -313,6 +313,7 @@ a:hover { color: var(--accent); }
   background: var(--glass); border: 1px solid var(--border);
   padding: 16px 18px; border-radius: var(--radius-lg);
   backdrop-filter: blur(8px);
+  word-break: break-word; overflow-wrap: break-word;
 }
 .viewer-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
 .viewer-tag {
