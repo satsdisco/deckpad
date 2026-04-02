@@ -325,6 +325,8 @@ app.post('/auth/login', (req, res) => {
 
 app.get('/auth/logout', (req, res) => {
   req.session = null;
+  res.clearCookie('deckpad_session');
+  res.clearCookie('deckpad_session.sig');
   res.redirect('/welcome');
 });
 
