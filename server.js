@@ -1395,8 +1395,9 @@ async function seedDemoDecks() {
 }
 
 function seedPlatformData() {
-  const bountyCount = db.prepare('SELECT COUNT(*) as c FROM bounties').get().c;
-  if (bountyCount > 0) return;
+  // Only seed if no events exist yet (first run)
+  const eventCount = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+  if (eventCount > 0) return;
 
   console.log('[seed] Inserting platform data...');
 
