@@ -144,7 +144,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSpeaker(); this.closest('.modal-overlay').classList.remove('open')">Submit</button>
+      <button class="btn btn-primary" onclick="submitSpeaker()">Submit</button>
     </div>
   </div>
 </div>
@@ -194,7 +194,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitProject(); this.closest('.modal-overlay').classList.remove('open')">Submit</button>
+      <button class="btn btn-primary" onclick="submitProject()">Submit</button>
     </div>
   </div>
 </div>
@@ -442,13 +442,15 @@ async function submitSpeaker() {
   const deck_id = document.getElementById('spkDeckId').value || null;
   if (!name || !project) return alert('Please enter your name and project title.');
   try {
-    await fetch('/api/speakers', {
+    const r = await fetch('/api/speakers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, project_title: project, description: desc, duration: Number(duration), event_id: nextDemoDay?.id, github_url: github_url || null, demo_url: demo_url || null, deck_id })
     });
+    if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error || 'Signup failed'); return; }
     ['spkName','spkProject','spkDesc','spkGithub','spkDemo'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('spkDeckId').value = '';
+    document.getElementById('speakerModal').classList.remove('open');
     const res = await fetch('/api/speakers' + (nextDemoDay ? '?event=' + encodeURIComponent(nextDemoDay.id) : ''));
     speakersData = await res.json();
     renderSpeakerList();
@@ -537,8 +539,8 @@ function renderProjects(projects) {
     const [statusCls, statusLabel] = statusMap[p.status] || ['badge-idea', p.status];
     const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : Array.isArray(p.tags) ? p.tags.map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
     const links = [
-      p.repo ? `<a href="${esc(p.repo)}" target="_blank" rel="noopener" class="project-link">📦 Repo</a>` : '',
-      p.demo ? `<a href="${esc(p.demo)}" target="_blank" rel="noopener" class="project-link">🚀 Demo</a>` : ''
+      (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link">⌥ Repo</a>` : '',
+      (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link">↗ Demo</a>` : ''
     ].filter(Boolean).join('');
     return `
       <div class="project-card" id="proj-${esc(p.id)}">
@@ -576,14 +578,15 @@ async function submitProject() {
   const demo = document.getElementById('projDemo').value.trim();
   if (!name || !builder) return alert('Please enter a project name and builder name.');
   try {
-    await fetch('/api/projects', {
+    const r = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, builder, description: desc, status, tags, repo, demo })
     });
+    if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error || 'Submission failed'); return; }
     ['projName','projBuilder','projDesc','projTags','projRepo','projDemo'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('projStatus').value = 'building';
-    toggleProjectForm();
+    document.getElementById('projectModal').classList.remove('open');
     const res = await fetch('/api/projects');
     renderProjects(await res.json());
   } catch {
