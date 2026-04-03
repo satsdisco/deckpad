@@ -219,7 +219,6 @@ async function loadProject() {
 
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
         <button class="btn btn-zap" id="zapProjectBtn" onclick="openZapModal()">⚡ Zap</button>
-        <button class="vote-btn vote-pill" id="projVoteBtn" onclick="voteProject()"><span class="arrow">▲</span> <span id="projVoteCountBtn">${p.votes || 0}</span></button>
         ${p.repo_url ? `<a href="${esc(p.repo_url)}" target="_blank" class="btn" style="border-radius:20px">⌥ Repo</a>` : ''}
         ${p.demo_url ? `<a href="${esc(p.demo_url)}" target="_blank" class="btn" style="border-radius:20px">↗ Demo</a>` : ''}
         <div style="flex:1"></div>
@@ -243,7 +242,13 @@ async function loadProject() {
 
 
 
-        <div class="comments-section" style="border:none;padding:0;margin-top:28px">
+        <div style="display:flex;align-items:center;gap:12px;padding:20px 0;margin-top:16px;border-top:1px solid var(--border)">
+          <span style="font-size:0.85rem;color:var(--muted)">Did you like this project?</span>
+          <button class="vote-btn vote-pill" id="projVoteBtn" onclick="voteProject()" style="font-size:0.85rem;padding:8px 18px"><span class="arrow">▲</span> <span id="projVoteCountBtn">${p.votes || 0}</span></button>
+          <button class="btn btn-zap" onclick="openZapModal()" style="font-size:0.82rem;padding:7px 16px">⚡ Zap this project</button>
+        </div>
+
+        <div class="comments-section" style="border:none;padding:0;margin-top:16px">
           <div id="commentFormArea"></div>
           <div id="commentList"></div>
         </div>
