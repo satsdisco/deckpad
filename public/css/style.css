@@ -478,11 +478,13 @@ a:hover { color: var(--accent); }
 }
 .project-card-visual {
   width: 100%;
-  height: 120px;
+  height: 140px;
   object-fit: cover;
+  object-position: center center;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   display: block;
   flex-shrink: 0;
+  background: var(--glass);
 }
 .project-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,.3); }
 .project-name { font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
@@ -3223,7 +3225,7 @@ body::after {
 /* ─── Project Page Redesign ──────────────────────────────────────────────── */
 
 .project-banner-wrap { position: relative; width: 100%; margin-bottom: 0; }
-.project-banner { width: 100%; height: 200px; object-fit: cover; border-radius: 0 0 var(--radius-lg) var(--radius-lg); display: block; }
+.project-banner { width: 100%; height: 200px; object-fit: cover; object-position: center center; border-radius: 0 0 var(--radius-lg) var(--radius-lg); display: block; background: var(--glass); }
 .project-banner-gradient { width: 100%; height: 200px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .project-banner-gradient.cat-game { background: linear-gradient(135deg, #3d0066, #0a0628); }
 .project-banner-gradient.cat-tool { background: linear-gradient(135deg, #0a2840, #0d0f1a); }
