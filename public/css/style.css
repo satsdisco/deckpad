@@ -983,14 +983,15 @@ a:hover { color: var(--accent); }
 .build-view.active { display: block; }
 
 @media (max-width: 768px) {
-  .build-layout { flex-direction: column; gap: 0; padding: 16px 0 64px; }
-  .build-sidebar { width: 100%; position: static; margin-bottom: 16px; padding: 0; }
+  .build-page.container { padding: 0; overflow-x: hidden; }
+  .build-layout { flex-direction: column; gap: 0; padding: 0 0 64px; }
+  .build-sidebar { width: 100%; position: static; margin-bottom: 0; padding: 0; }
   .sidebar-title { display: none; }
   .sidebar-nav {
     flex-direction: row; overflow-x: auto; gap: 0;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
     border-bottom: 1px solid var(--border);
-    margin: 0 -1rem; padding: 0 1rem;
+    padding: 0 1rem;
   }
   .sidebar-nav::-webkit-scrollbar { display: none; }
   .sidebar-link {
@@ -999,6 +1000,7 @@ a:hover { color: var(--accent); }
     font-size: 0.82rem;
   }
   .sidebar-link.active { border-bottom-color: var(--accent); border-left-color: transparent; }
+  .build-content { padding: 16px 1rem 0; }
 }
 
 /* ─── FAB (Floating Action Button) ───────────────────────────────────────── */
