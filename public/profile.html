@@ -421,7 +421,6 @@ async function loadProfile() {
           : '');
 
     const adminTabs = user.is_admin ? `
-      <button class="profile-tab" onclick="switchProfileTab('bounties', event)">Bounties</button>
       <button class="profile-tab" onclick="switchProfileTab('events', event)">Events</button>
     ` : '';
 
@@ -523,6 +522,7 @@ async function loadProfile() {
       <div class="profile-tabs" style="margin-top:32px">
         <button class="profile-tab active" onclick="switchProfileTab('decks', event)">Decks (${decksRes.length})</button>
         <button class="profile-tab" onclick="switchProfileTab('projects', event)">Projects (${projRes.length})</button>
+        <button class="profile-tab" onclick="switchProfileTab('bounties', event)">Bounties</button>
         ${adminTabs}
         ${badgesTabBtn}
       </div>
@@ -535,7 +535,7 @@ async function loadProfile() {
         ${projRes.length ? '<div class="project-grid">' + projRes.map(p => renderProjectCard(p)).join('') + '</div>' : '<div class="empty-state"><p>No projects yet</p></div>'}
       </div>
 
-      ${user.is_admin ? '<div class="profile-tab-view" id="ptab-bounties"><p style="color:var(--muted);font-size:0.85rem">Bounty management coming soon</p></div>' : ''}
+      <div class="profile-tab-view" id="ptab-bounties" data-loaded="false" data-uid="${esc(profileId)}"></div>
       ${user.is_admin ? '<div class="profile-tab-view" id="ptab-events"><p style="color:var(--muted);font-size:0.85rem">Event management coming soon</p></div>' : ''}
 
       ${badgesTabHtml}
@@ -593,7 +593,46 @@ function switchProfileTab(name, ev) {
   document.querySelectorAll('.profile-tab-view').forEach(v => v.classList.remove('active'));
   if (ev) ev.target.classList.add('active');
   const view = document.getElementById('ptab-' + name);
-  if (view) view.classList.add('active');
+  if (view) {
+    view.classList.add('active');
+    if (name === 'bounties' && view.dataset.loaded === 'false') {
+      view.dataset.loaded = 'true';
+      loadBountiesTab(view);
+    }
+  }
+}
+
+async function loadBountiesTab(view) {
+  const uid = view.dataset.uid;
+  view.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;padding:16px 0">Loading...</p>';
+  try {
+    const meRes = await fetch('/api/me').then(r => r.json());
+    const isOwn = meRes.user && meRes.user.id === uid;
+    const bounties = await fetch('/api/users/' + uid + '/bounties').then(r => r.json());
+    if (!bounties.length) {
+      view.innerHTML = '<div class="empty-state" style="padding:32px 0"><p>Join a bounty hunt to get started!</p></div>';
+      return;
+    }
+    view.innerHTML = '<div class="bounty-hunt-list">' + bounties.map(b => renderBountyItem(b, isOwn)).join('') + '</div>';
+  } catch(e) {
+    view.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;padding:16px 0">Failed to load bounties</p>';
+  }
+}
+
+function renderBountyItem(b, isOwn) {
+  const statusColor = b.status === 'open' ? 'var(--btc-bright)' : b.status === 'claimed' ? '#a78bfa' : 'var(--muted)';
+  const joinedDays = Math.floor((Date.now() - new Date(b.joined_at).getTime()) / 86400000);
+  const joinedLabel = joinedDays === 0 ? 'today' : joinedDays === 1 ? '1 day ago' : joinedDays + ' days ago';
+  const submitBtn = (isOwn && b.status === 'open')
+    ? ` <a href="/bounty/${esc(b.id)}" style="margin-left:8px;font-size:0.72rem;color:var(--btc-bright);text-decoration:none;border:1px solid rgba(242,177,52,.3);border-radius:100px;padding:2px 10px;white-space:nowrap">Submit →</a>`
+    : '';
+  return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap">
+    <span style="color:var(--btc-bright);font-size:0.8rem;font-family:var(--font-mono);white-space:nowrap">⚡ ${Number(b.sats_amount).toLocaleString()} sats</span>
+    <a href="/bounty/${esc(b.id)}" style="font-size:0.85rem;color:var(--text);text-decoration:none;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.title)}</a>
+    <span style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:${statusColor}">${esc(b.status)}</span>
+    <span style="font-size:0.72rem;color:var(--muted);white-space:nowrap">Joined ${joinedLabel}</span>
+    ${submitBtn}
+  </div>`;
 }
 
 

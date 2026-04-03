@@ -1948,6 +1948,17 @@ app.get('/api/users/:id/projects', (req, res) => {
   res.json(rows);
 });
 
+app.get('/api/users/:id/bounties', (req, res) => {
+  const rows = db.prepare(`
+    SELECT b.*, bp.created_at as joined_at
+    FROM bounty_participants bp
+    JOIN bounties b ON bp.bounty_id = b.id
+    WHERE bp.user_id = ?
+    ORDER BY bp.created_at DESC
+  `).all(req.params.id);
+  res.json(rows);
+});
+
 app.get('/api/users/:id/activity', (req, res) => {
   const userId = req.params.id;
   const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId);
