@@ -990,6 +990,7 @@ a:hover { color: var(--accent); }
     flex-direction: row; overflow-x: auto; gap: 0;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
     border-bottom: 1px solid var(--border);
+    margin: 0 -1rem; padding: 0 1rem;
   }
   .sidebar-nav::-webkit-scrollbar { display: none; }
   .sidebar-link {
@@ -1075,15 +1076,20 @@ a:hover { color: var(--accent); }
   .viewer-title { font-size: 1rem; }
 
   /* Section headers */
-  .section-header { flex-wrap: wrap; gap: 8px; }
-  .section-header .btn { font-size: 0.7rem; padding: 5px 10px; min-height: 32px; }
+  .section-header { flex-wrap: wrap; gap: 6px; }
+  .section-header .btn { font-size: 0.65rem; padding: 4px 8px; min-height: 28px; }
 
   /* Calendar */
-  .mini-cal { max-width: 100%; padding: 14px; }
-  .cal-header { padding: 0 4px; }
-  .cal-grid { gap: 1px; }
-  .cal-cell { min-height: 36px; }
-  .cal-day-label { font-size: 0.55rem; }
+  .mini-cal { max-width: 100%; padding: 12px; margin-left: 0; margin-right: 0; }
+  .mini-cal-grid { gap: 1px; }
+  .mini-cal-day { font-size: 0.7rem; padding: 5px 0; }
+  .mini-cal-day-label { font-size: 0.5rem; padding: 4px 0; }
+  .cal-cell { min-height: 32px; }
+
+  /* FAB */
+  .fab { bottom: 16px; right: 16px; width: 44px; height: 44px; border-radius: 22px; }
+  .fab svg { width: 18px; height: 18px; }
+  .fab-label { display: none; }
 
   /* Modals */
   .modal-overlay { padding: 24px 12px; }
