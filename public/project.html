@@ -217,6 +217,16 @@ async function loadProject() {
 
       ${statsBar}
 
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn btn-zap" id="zapProjectBtn" onclick="openZapModal()">⚡ Zap</button>
+        <button class="vote-btn vote-pill" id="projVoteBtn" onclick="voteProject()"><span class="arrow">▲</span> <span id="projVoteCountBtn">${p.votes || 0}</span></button>
+        ${p.repo_url ? `<a href="${esc(p.repo_url)}" target="_blank" class="btn" style="border-radius:20px">⌥ Repo</a>` : ''}
+        ${p.demo_url ? `<a href="${esc(p.demo_url)}" target="_blank" class="btn" style="border-radius:20px">↗ Demo</a>` : ''}
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost btn-sm" id="editProjectBtn" style="display:none;font-size:0.7rem;color:var(--muted)" onclick="openEditProject()">✏️ Edit</button>
+        <button class="btn btn-sm" id="deleteProjectBtn" style="display:none;font-size:0.7rem;color:#a04040;border-color:transparent" onclick="deleteProject()">🗑</button>
+      </div>
+
       <div class="project-tabs">
         <button class="project-tab active" onclick="switchProjectTab('overview', event)">Overview</button>
         <button class="project-tab" onclick="switchProjectTab('presentations', event)">Presentations</button>
@@ -231,17 +241,7 @@ async function loadProject() {
           ${tags.map(t => `<span class="card-tag">${esc(t)}</span>`).join('')}
         </div>
 
-        <div id="zapStats" style="margin-bottom:16px"></div>
 
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-          <button class="btn btn-zap" id="zapProjectBtn" onclick="openZapModal()">⚡ Zap</button>
-          <button class="vote-btn vote-pill" id="projVoteBtn" onclick="voteProject()"><span class="arrow">▲</span> <span id="projVoteCountBtn">${p.votes || 0}</span></button>
-          ${p.repo_url ? `<a href="${esc(p.repo_url)}" target="_blank" class="btn" style="border-radius:20px">⌥ Repo</a>` : ''}
-          ${p.demo_url ? `<a href="${esc(p.demo_url)}" target="_blank" class="btn" style="border-radius:20px">↗ Demo</a>` : ''}
-          <div style="flex:1"></div>
-          <button class="btn btn-ghost btn-sm" id="editProjectBtn" style="display:none;font-size:0.7rem;color:var(--muted)" onclick="openEditProject()">✏️ Edit</button>
-          <button class="btn btn-sm" id="deleteProjectBtn" style="display:none;font-size:0.7rem;color:#a04040;border-color:transparent" onclick="deleteProject()">🗑</button>
-        </div>
 
         <div class="comments-section" style="border:none;padding:0;margin-top:28px">
           <div id="commentFormArea"></div>
