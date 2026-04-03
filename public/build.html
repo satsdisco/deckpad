@@ -30,6 +30,7 @@
         <button class="sidebar-link active" data-view="events">Events</button>
         <button class="sidebar-link" data-view="projects">Projects</button>
         <button class="sidebar-link" data-view="bounties">Bounties</button>
+        <button class="sidebar-link" data-view="leaderboard">Leaderboard</button>
       </nav>
     </aside>
 
@@ -94,6 +95,18 @@
         </div>
 
       </div><!-- end #view-bounties -->
+
+      <!-- Leaderboard View -->
+      <div class="build-view" id="view-leaderboard">
+        <div class="section-block" id="section-leaderboard">
+          <div class="lb-aurora-header">
+            <div class="lb-aurora-title">Top Builders</div>
+            <div class="lb-aurora-sub">Ranked by total sats earned</div>
+            <div class="lb-total-sats" id="lbTotalSats" style="display:none">⚡ <span id="lbTotalSatsVal">0</span> sats distributed</div>
+          </div>
+          <div id="leaderboardList"></div>
+        </div>
+      </div><!-- end #view-leaderboard -->
 
     </main>
   </div>
@@ -291,6 +304,16 @@
   </div>
 </div>
 
+<!-- Project Zap Modal (build page) -->
+<div class="modal-overlay" id="projZapModal">
+  <div class="modal-content" style="max-width:440px;text-align:center">
+    <button class="modal-close" onclick="closeProjZapModal()">&times;</button>
+    <div id="projZapModalBody"></div>
+  </div>
+</div>
+
+<div id="projZapOverlay" class="zap-overlay">⚡</div>
+
 <footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
 
 <script>
@@ -331,15 +354,26 @@ async function loadBounties() {
       const statusLabel = { open: 'Open', claimed: 'Claimed', completed: 'Completed' }[b.status] || b.status;
       const tags = typeof b.tags === 'string' ? b.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
       const deadline = b.deadline ? `<span class="bounty-deadline">Deadline: ${esc(new Date(b.deadline).toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'}))}</span>` : '';
+      const participantCount = Array.isArray(b.participants) ? b.participants.length : (b.participant_count || 0);
+      const fundedAmt = Number(b.funded_amount || 0);
+      const targetAmt = Number(b.sats_amount || 0);
+      const fundedPct = targetAmt > 0 ? Math.min(100, Math.round((fundedAmt / targetAmt) * 100)) : 0;
+      const fundingBar = fundedAmt > 0 ? `
+        <div class="bounty-card-progress-wrap">
+          <div class="bounty-card-progress-bg"><div class="bounty-card-progress-fill" style="width:${fundedPct}%"></div></div>
+          <div class="bounty-card-progress-meta">⚡ ${fundedAmt.toLocaleString()} funded</div>
+        </div>` : '';
       return `
-        <div class="bounty-card" onclick="expandBounty('${esc(b.id)}')" style="cursor:pointer">
+        <div class="bounty-card" onclick="window.location.href='/bounty/${esc(b.id)}'" style="cursor:pointer">
           <div class="bounty-header">
             <div class="bounty-title">${esc(b.title)}</div>
             <span class="bounty-status ${statusClass}">${statusLabel}</span>
           </div>
           <div class="bounty-bottom">
             <div class="bounty-sats">⚡ ${Number(b.sats_amount || 0).toLocaleString()} sats</div>
+            ${fundingBar}
             ${tags ? `<div class="card-tags" style="margin-top:8px">${tags}</div>` : ''}
+            <div style="margin-top:8px;font-size:0.72rem;color:var(--muted2)">👥 ${participantCount} participant${participantCount !== 1 ? 's' : ''}</div>
           </div>
         </div>`;
     }).join('');
@@ -754,8 +788,11 @@ function renderProjectCards(projects) {
       (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">⌥ Repo</a>` : '',
       (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : ''
     ].filter(Boolean).join('');
+    const satsLabel = p.total_sats_received > 0
+      ? `<span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--btc-bright);opacity:.85">⚡${Number(p.total_sats_received).toLocaleString()}</span>`
+      : '';
     return `
-      <div class="project-card" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
+      <div class="project-card" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
           <div class="project-name">${esc(p.name)}</div>
           <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
@@ -765,7 +802,10 @@ function renderProjectCards(projects) {
         <div class="card-tags" style="margin-bottom:10px">${catTag}${bountyTag}${tags}</div>
         ${links ? `<div class="spk-links" style="margin-bottom:8px">${links}</div>` : ''}
         <div class="project-footer">
-          <span></span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="proj-zap-btn" onclick="event.stopPropagation(); openProjZapModal('${esc(p.id)}')" style="padding:4px 10px;border:1px solid rgba(242,177,52,.3);border-radius:100px;background:transparent;color:var(--btc-bright);font-size:0.72rem;cursor:pointer;opacity:.75;transition:opacity .15s" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=.75">⚡ Zap</button>
+            ${satsLabel}
+          </div>
           <button class="project-upvote" id="proj-vote-${esc(p.id)}" onclick="event.stopPropagation(); voteProject('${esc(p.id)}')">
             ▲ <span id="proj-count-${esc(p.id)}">${p.votes || 0}</span>
           </button>
@@ -814,18 +854,180 @@ async function voteProject(id) {
   toggleVote('project', id, document.getElementById('proj-vote-' + id), 'proj-count-' + id);
 }
 
+// ─── Project Zap ─────────────────────────────────────────────────────────
+
+let _pzPollInterval = null, _pzPollTimeout = null, _pzCurrentId = null;
+
+function showProjZap() {
+  const el = document.getElementById('projZapOverlay');
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 1600);
+}
+
+function closeProjZapModal() {
+  document.getElementById('projZapModal').classList.remove('open');
+  if (_pzPollInterval) { clearInterval(_pzPollInterval); _pzPollInterval = null; }
+  if (_pzPollTimeout) { clearTimeout(_pzPollTimeout); _pzPollTimeout = null; }
+}
+
+function openProjZapModal(projectId) {
+  _pzCurrentId = projectId;
+  const presets = [1000, 5000, 10000, 21000, 50000, 100000];
+  document.getElementById('projZapModalBody').innerHTML = `
+    <div style="font-size:1.05rem;font-weight:800;color:var(--btc-bright);margin-bottom:4px">⚡ Zap Builder</div>
+    <div style="font-size:0.8rem;color:var(--muted2);margin-bottom:20px">Tip the builder directly via Lightning</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:16px">
+      ${presets.map(s => `<button class="sats-preset-btn" onclick="setProjZapAmount(${s}, this)">${s >= 1000 ? (s/1000)+'k' : s}</button>`).join('')}
+    </div>
+    <div style="margin-bottom:16px">
+      <input type="number" id="projZapAmountInput" min="1" placeholder="Custom amount (sats)"
+        style="width:100%;padding:10px 14px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.9rem;text-align:center">
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:12px" onclick="generateProjZapInvoice()">Generate Invoice</button>
+    <div id="projZapError" style="color:#e05;font-size:0.8rem;margin-top:8px"></div>
+  `;
+  document.getElementById('projZapModal').classList.add('open');
+}
+
+function setProjZapAmount(val, btn) {
+  document.getElementById('projZapAmountInput').value = val;
+  document.querySelectorAll('#projZapModal .sats-preset-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function generateProjZapInvoice() {
+  const amount = parseInt(document.getElementById('projZapAmountInput').value);
+  if (!amount || amount < 1) { document.getElementById('projZapError').textContent = 'Enter an amount'; return; }
+  document.getElementById('projZapError').textContent = '';
+  document.getElementById('projZapModalBody').innerHTML = `<div style="padding:32px 0;color:var(--muted2);font-size:0.85rem">Generating invoice...</div>`;
+  try {
+    const r = await fetch('/api/projects/' + _pzCurrentId + '/zap', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ amount_sats: amount }),
+    });
+    if (!r.ok) { const e = await r.json(); openProjZapModal(_pzCurrentId); document.getElementById('projZapError').textContent = e.error || 'Failed'; return; }
+    const data = await r.json();
+    document.getElementById('projZapModalBody').innerHTML = `
+      <div style="margin-bottom:12px">
+        <div style="font-size:0.95rem;font-weight:800;color:var(--btc-bright)">⚡ ${Number(amount).toLocaleString()} sats</div>
+        <div style="font-size:0.75rem;color:var(--muted2);margin-top:2px">→ ${esc(data.recipient)}</div>
+      </div>
+      <div class="qr-container">
+        <img src="${data.qr_data_url}" alt="Lightning QR" style="width:260px;height:260px;border-radius:8px">
+      </div>
+      <div style="margin:14px 0 8px">
+        <div style="font-family:var(--font-mono);font-size:0.62rem;color:var(--muted2);word-break:break-all;padding:8px;background:rgba(0,0,0,.3);border-radius:var(--radius);margin-bottom:6px;max-height:56px;overflow:hidden">${esc(data.payment_request)}</div>
+        <button class="btn btn-sm" style="width:100%" onclick="navigator.clipboard.writeText('${esc(data.payment_request)}').then(()=>this.textContent='Copied!').catch(()=>{})">Copy Invoice</button>
+      </div>
+      <div id="projZapPaymentStatus" class="payment-waiting">
+        <span class="waiting-dots">Waiting for payment<span class="dot-anim">...</span></span>
+      </div>
+    `;
+    startProjZapPolling(data.zap_id, _pzCurrentId);
+  } catch (e) {
+    openProjZapModal(_pzCurrentId);
+    document.getElementById('projZapError').textContent = 'Error: ' + e.message;
+  }
+}
+
+function startProjZapPolling(zapId, projectId) {
+  _pzPollTimeout = setTimeout(() => {
+    clearInterval(_pzPollInterval);
+    const el = document.getElementById('projZapPaymentStatus');
+    if (el) el.innerHTML = 'Payment not detected — it may still arrive later.';
+  }, 5 * 60 * 1000);
+  _pzPollInterval = setInterval(async () => {
+    try {
+      const r = await fetch('/api/zaps/verify/' + zapId);
+      const data = await r.json();
+      if (data.settled) {
+        clearInterval(_pzPollInterval); clearTimeout(_pzPollTimeout);
+        const el = document.getElementById('projZapPaymentStatus');
+        if (el) el.innerHTML = '<div class="payment-confirmed">⚡ Zap sent!</div>';
+        showProjZap();
+        setTimeout(() => {
+          closeProjZapModal();
+          // Refresh project list to update sats counter
+          fetch('/api/projects').then(r => r.json()).then(data => renderProjects(data)).catch(() => {});
+        }, 2800);
+      }
+    } catch {}
+  }, 3000);
+}
+
 // ─── Bounty Detail ────────────────────────────────────────────────────────
 async function expandBounty(id) {
   try {
-    const res = await fetch('/api/bounties/' + id);
-    const b = await res.json();
+    const [bRes, meRes, lnCfgRes] = await Promise.all([
+      fetch('/api/bounties/' + id),
+      fetch('/api/me'),
+      fetch('/api/config/lightning'),
+    ]);
+    const b = await bRes.json();
+    const me = await meRes.json();
+    const lnCfg = await lnCfgRes.json();
     const tags = typeof b.tags === 'string' ? b.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
     const statusClass = { open: 'open', claimed: 'claimed', completed: 'completed' }[b.status] || 'open';
     const statusLabel = { open: 'Open', claimed: 'Claimed', completed: 'Completed' }[b.status] || b.status;
     const participants = b.participants || [];
-    let meRes = await fetch('/api/me');
-    let me = await meRes.json();
-    let alreadyJoined = me.user && participants.some(p => p.user_name === me.user.name);
+    const alreadyJoined = me.user && participants.some(p => p.user_name === me.user.name);
+    const isAdmin = me.user && me.user.is_admin;
+    const isWinner = me.user && b.winner_id && b.winner_id === me.user.id;
+
+    // Fetch winner lightning address if bounty is claimed/completed
+    let winnerLn = null;
+    if (b.winner_id) {
+      try {
+        const wRes = await fetch('/api/bounties/' + id + '/winner');
+        const wData = await wRes.json();
+        winnerLn = wData.lightning_address || null;
+      } catch(_) {}
+    }
+
+    // Admin: build participant options for approve-winner dropdown
+    const participantOptions = participants.map(p =>
+      '<option value="' + esc(p.user_id || '') + '|' + esc(p.user_name) + '">' + esc(p.user_name) + '</option>'
+    ).join('');
+
+    // Winner info badge (shown when claimed/completed)
+    const winnerBadge = b.winner_name
+      ? '<div style="margin-bottom:14px;padding:10px 14px;background:rgba(242,177,52,.08);border:1px solid rgba(242,177,52,.25);border-radius:var(--radius);font-size:0.85rem;color:var(--btc-gold)">🏆 Winner: <strong>' + esc(b.winner_name) + '</strong>' + (b.paid_out ? ' &nbsp;<span style="color:var(--accent);font-size:0.78rem">⚡ Paid</span>' : '') + '</div>'
+      : '';
+
+    // Admin: approve winner section (only if open and has participants)
+    const adminApproveSection = isAdmin && b.status === 'open' && participants.length
+      ? '<div style="margin-top:16px;padding:14px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">' +
+        '<div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted2);margin-bottom:10px">Admin — Approve Winner</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<select id="winnerSelect" style="flex:1;min-width:160px;font-size:0.82rem;padding:6px 10px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);color:var(--text)">' +
+        '<option value="">Select participant…</option>' + participantOptions + '</select>' +
+        '<button class="btn btn-primary" style="font-size:0.8rem;padding:7px 16px" onclick="adminApproveWinner(\'' + esc(b.id) + '\')">Approve Winner</button>' +
+        '</div></div>'
+      : '';
+
+    // Admin: mark paid section (only if claimed and not paid)
+    const adminMarkPaidSection = isAdmin && b.status === 'claimed' && !b.paid_out
+      ? '<div style="margin-top:12px;padding:14px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">' +
+        '<div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted2);margin-bottom:10px">Admin — Payout</div>' +
+        '<button class="btn btn-primary" style="font-size:0.82rem;padding:8px 20px" onclick="adminMarkPaid(\'' + esc(b.id) + '\')">⚡ Mark as Paid</button>' +
+        '</div>'
+      : '';
+
+    // Winner: claim sats section
+    const claimSatsSection = isWinner && (b.status === 'claimed' || b.status === 'completed')
+      ? '<div style="margin-top:16px;padding:16px;background:rgba(242,177,52,.06);border:1px solid rgba(242,177,52,.2);border-radius:var(--radius)">' +
+        '<div style="font-size:0.8rem;font-weight:700;color:var(--btc-gold);margin-bottom:12px">⚡ Claim Your Sats</div>' +
+        '<div style="font-family:var(--font-mono);font-size:1.1rem;font-weight:800;color:var(--btc-gold);margin-bottom:10px">⚡ ' + Number(b.sats_amount || 0).toLocaleString() + ' sats</div>' +
+        (winnerLn
+          ? '<div style="font-size:0.82rem;color:var(--text2);margin-bottom:10px">Your Lightning address: <strong style="color:var(--text)">' + esc(winnerLn) + '</strong></div>'
+          : '<div style="font-size:0.82rem;color:var(--muted2);margin-bottom:10px">You haven\'t set a Lightning address yet. <a href="/profile" style="color:var(--btc-gold)">Set one on your profile →</a></div>'
+        ) +
+        '<div style="font-size:0.82rem;color:var(--text2);line-height:1.5;padding:10px 12px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">' +
+        'Contact admin to receive your sats via Lightning<br>' +
+        '<span style="font-family:var(--font-mono);color:var(--btc-gold)">' + esc(lnCfg.admin_ln_address || 'lunarpad@21m.lol') + '</span>' +
+        '</div></div>'
+      : '';
+
     const modal = document.getElementById('bountyModal');
     document.getElementById('bountyModalBody').innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
@@ -833,6 +1035,7 @@ async function expandBounty(id) {
         <span class="bounty-status ${statusClass}" style="margin-left:12px">${statusLabel}</span>
       </div>
       <div style="font-family:var(--font-mono);font-size:1.3rem;font-weight:800;color:var(--btc-gold);margin-bottom:16px">&#9889; ${Number(b.sats_amount || 0).toLocaleString()} sats</div>
+      ${winnerBadge}
       <div style="font-size:0.88rem;color:var(--text2);line-height:1.6;padding:16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px">${esc(b.description)}</div>
       ${tags.length ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px">' + tags.map(t => '<span class="card-tag">' + esc(t) + '</span>').join('') + '</div>' : ''}
       <div style="padding-top:16px;border-top:1px solid var(--border)">
@@ -844,10 +1047,36 @@ async function expandBounty(id) {
         ${b.status === 'open' && !me.user ? '<a href="/auth/google" class="btn btn-primary" style="padding:10px 24px;font-size:0.85rem">Sign in to Join</a>' : ''}
         ${alreadyJoined ? '<button class="btn btn-danger" onclick="leaveBounty(\'' + esc(b.id) + '\')">✗ Leave Hunt</button><span style="font-size:0.85rem;color:var(--accent);font-weight:600">&#10003; You\'re in the hunt!</span>' : ''}
         ${alreadyJoined ? '<button class="btn" style="margin-left:8px" onclick="openProjectForBounty(\'' + esc(b.id) + '\', \'' + esc(b.title) + '\')">Submit Project</button>' : ''}
-        ${b.status !== 'open' ? '<span style="font-size:0.85rem;color:var(--muted2)">This bounty is ' + b.status + '</span>' : ''}
-      </div>`;
+        ${b.status !== 'open' && !isWinner ? '<span style="font-size:0.85rem;color:var(--muted2)">This bounty is ' + b.status + '</span>' : ''}
+      </div>
+      ${adminApproveSection}
+      ${adminMarkPaidSection}
+      ${claimSatsSection}`;
     modal.classList.add('open');
   } catch(e) { console.error('Failed to load bounty:', e); }
+}
+
+async function adminApproveWinner(bountyId) {
+  const sel = document.getElementById('winnerSelect');
+  if (!sel || !sel.value) return alert('Please select a participant');
+  const [winnerId, winnerName] = sel.value.split('|');
+  if (!winnerId || !winnerName) return alert('Invalid selection');
+  try {
+    const r = await fetch('/api/bounties/' + bountyId + '/approve-winner', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ winner_id: winnerId, winner_name: winnerName }),
+    });
+    if (r.ok) { expandBounty(bountyId); loadBounties(); }
+    else { const e = await r.json(); alert(e.error || 'Failed'); }
+  } catch { alert('Failed to approve winner'); }
+}
+
+async function adminMarkPaid(bountyId) {
+  try {
+    const r = await fetch('/api/bounties/' + bountyId + '/mark-paid', { method: 'POST' });
+    if (r.ok) { expandBounty(bountyId); loadBounties(); }
+    else { const e = await r.json(); alert(e.error || 'Failed'); }
+  } catch { alert('Failed to mark as paid'); }
 }
 
 function openProjectForBounty(bountyId, bountyTitle) {
@@ -955,6 +1184,73 @@ async function checkAdmin() {
   } catch {}
 }
 
+// ─── Leaderboard ──────────────────────────────────────────────────────────
+async function loadLeaderboard() {
+  const el = document.getElementById('leaderboardList');
+  try {
+    const [lbRes, meRes] = await Promise.all([
+      fetch('/api/leaderboard'),
+      fetch('/api/me'),
+    ]);
+    const data = await lbRes.json();
+    const meData = await meRes.json().catch(() => ({}));
+    const myId = meData.user?.id || null;
+
+    if (!data.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">⚡</div><h3>No builders ranked yet</h3><p>Win a bounty to claim your spot on the leaderboard.</p></div>`;
+      return;
+    }
+
+    // Total sats distributed
+    const totalSats = data.reduce((s, u) => s + Number(u.total_sats), 0);
+    const totalEl = document.getElementById('lbTotalSats');
+    const totalValEl = document.getElementById('lbTotalSatsVal');
+    if (totalEl && totalValEl && totalSats > 0) {
+      totalValEl.textContent = totalSats.toLocaleString();
+      totalEl.style.display = '';
+    }
+
+    const maxSats = Math.max(1, ...data.map(u => Number(u.total_sats)));
+
+    const BADGE_MAP = { first_build:'🔨', first_sats:'⚡', demo_champ:'🏆', streak:'🔥' };
+
+    const rankEl = (rank) => {
+      if (rank === 1) return `<span class="lb-medal lb-medal-gold">1</span>`;
+      if (rank === 2) return `<span class="lb-medal lb-medal-silver">2</span>`;
+      if (rank === 3) return `<span class="lb-medal lb-medal-bronze">3</span>`;
+      return `<span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--muted);min-width:28px;text-align:center;display:inline-block">#${rank}</span>`;
+    };
+
+    el.innerHTML = `<div class="lb-table">` + data.map(u => {
+      const badgePills = u.badges.map(b =>
+        `<span class="lb-badge-pill" title="${b.replace(/_/g,' ')}">${BADGE_MAP[b] || '🏅'}</span>`
+      ).join('');
+      const avatarHtml = u.avatar
+        ? `<img class="lb-avatar" src="${esc(u.avatar)}" alt="" onerror="this.style.display='none'">`
+        : `<div class="lb-avatar lb-avatar-placeholder">${esc((u.name||'?')[0].toUpperCase())}</div>`;
+      const tierClass = u.rank === 1 ? 'lb-rank-gold' : u.rank === 2 ? 'lb-rank-silver' : u.rank === 3 ? 'lb-rank-bronze' : '';
+      const selfClass = (myId && u.user_id === myId) ? 'lb-row-self' : '';
+      const barPct = Math.round((Number(u.total_sats) / maxSats) * 100);
+      return `
+        <div class="lb-row ${tierClass} ${selfClass}">
+          <div class="lb-rank">${rankEl(u.rank)}</div>
+          <div class="lb-avatar-wrap">${avatarHtml}</div>
+          <div class="lb-name-col">
+            <a href="/profile/${esc(u.user_id)}" class="lb-name">${esc(u.name)}</a>
+            <div class="lb-badges">${badgePills}</div>
+          </div>
+          <div class="lb-bar-wrap"><div class="lb-bar-fill" style="width:${barPct}%"></div></div>
+          <div class="lb-stat lb-sats">⚡ ${Number(u.total_sats).toLocaleString()}</div>
+          ${u.zaps_received > 0 ? `<div class="lb-stat lb-meta" title="Zaps received">🤙 ${Number(u.zaps_received).toLocaleString()}</div>` : ''}
+          <div class="lb-stat lb-meta">🏆 ${u.bounties_won} won</div>
+          <div class="lb-stat lb-meta">📦 ${u.projects_count}</div>
+        </div>`;
+    }).join('') + `</div>`;
+  } catch {
+    el.innerHTML = `<div style="font-size:0.8rem;color:var(--muted2);padding:12px 0;">Could not load leaderboard.</div>`;
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadEvents();
@@ -962,6 +1258,13 @@ document.addEventListener('DOMContentLoaded', () => {
   loadBounties();
   checkAdmin();
   loadProjectDecksDropdown();
+});
+
+// Load leaderboard lazily when tab is clicked
+document.querySelectorAll('.sidebar-link').forEach(link => {
+  if (link.dataset.view === 'leaderboard') {
+    link.addEventListener('click', () => { loadLeaderboard(); }, { once: true });
+  }
 });
 </script>
 <script>

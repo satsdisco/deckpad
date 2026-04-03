@@ -29,28 +29,49 @@
 <script>
 function esc(s) { const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
 
-// Determine profile ID: /profile/:id or /profile (own)
+const ALL_BADGES = [
+  { id: 'first_build', emoji: '🔨', name: 'First Build',       desc: 'Submitted your first project' },
+  { id: 'first_sats',  emoji: '⚡', name: 'First Sats',        desc: 'Won your first bounty' },
+  { id: 'demo_champ',  emoji: '🏆', name: 'Demo Day Champion', desc: 'Won a demo day bounty' },
+  { id: 'streak',      emoji: '🔥', name: 'On a Streak',       desc: 'Submitted projects in 2+ events' },
+];
+
 const pathParts = window.location.pathname.split('/').filter(Boolean);
-let profileId = pathParts.length > 1 ? pathParts[1] : null; // will be set from /api/me if null
+let profileId = pathParts.length > 1 ? pathParts[1] : null;
+
+async function saveLightningAddress() {
+  const val = document.getElementById('lnInput')?.value.trim() ?? '';
+  try {
+    const r = await fetch('/api/profile/lightning', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lightning_address: val || null }),
+    });
+    if (r.ok) {
+      const msg = document.getElementById('lnSaveMsg');
+      if (msg) { msg.style.display = ''; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+    }
+  } catch { alert('Failed to save Lightning address'); }
+}
 
 async function loadProfile() {
   const content = document.getElementById('profileContent');
 
-  // Get current user
   const meRes = await fetch('/api/me');
   const me = await meRes.json();
 
-  // If no ID in URL, use own profile
   if (!profileId && me.user) profileId = me.user.id;
   if (!profileId) { content.innerHTML = '<div class="empty-state"><h3>Please sign in</h3></div>'; return; }
 
   const isOwn = me.user && me.user.id === profileId;
 
   try {
-    const [userRes, decksRes, projRes] = await Promise.all([
+    const [userRes, decksRes, projRes, activityRes, chartRes] = await Promise.all([
       fetch('/api/users/' + profileId).then(r => r.json()),
       fetch('/api/users/' + profileId + '/decks').then(r => r.json()),
       fetch('/api/users/' + profileId + '/projects').then(r => r.json()),
+      fetch('/api/users/' + profileId + '/activity').then(r => r.json()),
+      fetch('/api/users/' + profileId + '/activity-chart').then(r => r.json()).catch(() => ({ days: [] })),
     ]);
 
     const user = userRes;
@@ -58,32 +79,166 @@ async function loadProfile() {
 
     document.title = user.name + ' — LunarPad';
     const memberSince = new Date(user.created_at).toLocaleDateString('en', {month:'long', year:'numeric'});
+    const earnedBadges = Array.isArray(user.badges) ? user.badges : [];
+
+    // ── Stats bar ──
+    const statsBar = `
+      <div class="profile-stats-bar">
+        <div class="profile-stat-item">
+          <div class="profile-stat-value gold stat-countup" data-target="${Number(user.total_sats_earned || 0)}">⚡ 0</div>
+          <div class="profile-stat-label">sats earned</div>
+        </div>
+        <div class="profile-stat-item">
+          <div class="profile-stat-value stat-countup" data-target="${user.bounties_won || 0}" data-prefix="🏆 ">🏆 0</div>
+          <div class="profile-stat-label">bounties won</div>
+        </div>
+        <div class="profile-stat-item">
+          <div class="profile-stat-value stat-countup" data-target="${user.project_count || 0}" data-prefix="📦 ">📦 0</div>
+          <div class="profile-stat-label">projects</div>
+        </div>
+        <div class="profile-stat-item">
+          <div class="profile-stat-value stat-countup" data-target="${user.deck_count || 0}" data-prefix="🎭 ">🎭 0</div>
+          <div class="profile-stat-label">decks</div>
+        </div>
+      </div>`;
+
+    // ── Activity chart ──
+    const chartDays = (chartRes.days && chartRes.days.length) ? chartRes.days : [];
+    const totalActivity = chartDays.reduce((s, d) => s + d.count, 0);
+    const maxCount = Math.max(1, ...chartDays.map(d => d.count));
+    const CELL = 11, GAP = 2, STEP = CELL + GAP;
+    const svgW = 52 * STEP + 28;
+    const svgH = 7 * STEP + 24;
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const DAYS   = ['','Mon','','Wed','','Fri',''];
+
+    // Build cells: pad front so first day aligns to correct weekday
+    const firstDate = chartDays.length ? new Date(chartDays[0].date + 'T12:00:00Z') : new Date();
+    const startDow  = firstDate.getUTCDay(); // 0=Sun
+    const totalCells = startDow + chartDays.length;
+    const numCols = Math.ceil(totalCells / 7);
+
+    let cells = '';
+    let monthLabels = '';
+    let lastMonth = -1;
+    for (let col = 0; col < numCols; col++) {
+      for (let row = 0; row < 7; row++) {
+        const idx = col * 7 + row - startDow;
+        const x = col * STEP + 28;
+        const y = row * STEP + 18;
+        if (idx < 0 || idx >= chartDays.length) {
+          cells += `<rect class="ac-cell ac-cell-0" x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2"/>`;
+        } else {
+          const d = chartDays[idx];
+          const c = d.count === 0 ? 0 : d.count === 1 ? 1 : d.count <= 3 ? 2 : d.count <= 6 ? 3 : 4;
+          cells += `<rect class="ac-cell ac-cell-${c}" x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" data-date="${d.date}" data-count="${d.count}"/>`;
+          // Month label on first of month, row 0
+          if (row === 0 && idx >= 0) {
+            const month = new Date(d.date + 'T12:00:00Z').getUTCMonth();
+            if (month !== lastMonth) {
+              monthLabels += `<text class="ac-month-label" x="${x}" y="12">${MONTHS[month]}</text>`;
+              lastMonth = month;
+            }
+          }
+        }
+      }
+    }
+
+    let dayLabels = '';
+    DAYS.forEach((label, i) => {
+      if (label) dayLabels += `<text class="ac-day-label" x="2" y="${i * STEP + 18 + CELL}">${label}</text>`;
+    });
+
+    const activityChart = `
+      <div class="activity-chart-section">
+        <div class="activity-chart-header">
+          <span class="activity-chart-title">Activity</span>
+          <span class="activity-chart-count">${totalActivity} contributions this year</span>
+        </div>
+        <div class="activity-chart-wrap">
+          <svg class="activity-chart-svg" width="${numCols * STEP + 28}" height="${svgH}" viewBox="0 0 ${numCols * STEP + 28} ${svgH}">
+            ${monthLabels}
+            ${dayLabels}
+            ${cells}
+          </svg>
+        </div>
+      </div>`;
+
+    // ── Badges ──
+    const badgesHtml = ALL_BADGES.map(b => {
+      const earned = earnedBadges.includes(b.id);
+      return `
+        <div class="badge-card ${earned ? 'badge-earned' : 'badge-locked'}" title="${esc(b.desc)}">
+          <div class="badge-emoji">${earned ? b.emoji : '🔒'}</div>
+          <div class="badge-name">${esc(b.name)}</div>
+          <div class="badge-desc">${esc(b.desc)}</div>
+        </div>`;
+    }).join('');
+
+    // ── Activity feed ──
+    const activityTypeIcon = { bounty_won: '⚡', project: '📦', bounty_joined: '🎯' };
+    const activityHtml = activityRes.length
+      ? activityRes.map(item => {
+          const icon = activityTypeIcon[item.type] || '•';
+          const timeAgo = formatTimeAgo(item.created_at);
+          return `<div class="activity-item"><span class="activity-icon">${icon}</span><span class="activity-text">${esc(item.text)}</span><span class="activity-time">${timeAgo}</span></div>`;
+        }).join('')
+      : `<div class="empty-state" style="padding:24px 0"><p>No activity yet</p></div>`;
+
+    // ── Lightning field ──
+    const lightningHtml = isOwn
+      ? `<div class="profile-lightning">
+          <span class="profile-lightning-label">⚡ Lightning address</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input id="lnInput" type="text" value="${esc(user.lightning_address || '')}" placeholder="you@getalby.com" class="ln-input">
+            <button onclick="saveLightningAddress()" class="ln-save-btn">Save</button>
+            <span id="lnSaveMsg" style="font-size:0.75rem;color:var(--accent);display:none">Saved ✓</span>
+          </div>
+        </div>`
+      : (user.lightning_address
+          ? `<div class="profile-lightning-readonly">⚡ ${esc(user.lightning_address)}</div>`
+          : '');
 
     const adminTabs = user.is_admin ? `
-      <button class="profile-tab" onclick="switchProfileTab('bounties')">Bounties</button>
-      <button class="profile-tab" onclick="switchProfileTab('events')">Events</button>
+      <button class="profile-tab" onclick="switchProfileTab('bounties', event)">Bounties</button>
+      <button class="profile-tab" onclick="switchProfileTab('events', event)">Events</button>
     ` : '';
+
+    const avatarRingClass = (user.bounties_won > 0) ? 'ring-gold' : (user.project_count > 0) ? 'ring-accent' : '';
 
     content.innerHTML = `
       <div class="profile-header">
-        <img class="profile-avatar" src="${esc(user.avatar || '')}" alt="" onerror="this.style.display='none'">
+        <div class="profile-avatar-wrap">
+          <img class="profile-avatar ${avatarRingClass}" src="${esc(user.avatar || '')}" alt="" onerror="this.style.display='none'">
+        </div>
         <div class="profile-info">
           <div class="profile-name">
             ${esc(user.name)}
             ${user.is_admin ? '<span class="profile-badge">Admin</span>' : ''}
           </div>
           <div class="profile-email">${esc(user.email)}</div>
-          <div class="profile-stats">
-            <div class="profile-stat"><strong>${user.deck_count}</strong> decks</div>
-            <div class="profile-stat"><strong>${user.project_count}</strong> projects</div>
-          </div>
           <div class="profile-meta">Member since ${memberSince}</div>
+          ${lightningHtml}
         </div>
       </div>
 
-      <div class="profile-tabs">
-        <button class="profile-tab active" onclick="switchProfileTab('decks')">Decks (${decksRes.length})</button>
-        <button class="profile-tab" onclick="switchProfileTab('projects')">Projects (${projRes.length})</button>
+      ${statsBar}
+
+      ${activityChart}
+
+      <div class="profile-section">
+        <div class="profile-section-title">Badges</div>
+        <div class="badges-row">${badgesHtml}</div>
+      </div>
+
+      <div class="profile-section">
+        <div class="profile-section-title">Activity</div>
+        <div class="activity-feed">${activityHtml}</div>
+      </div>
+
+      <div class="profile-tabs" style="margin-top:32px">
+        <button class="profile-tab active" onclick="switchProfileTab('decks', event)">Decks (${decksRes.length})</button>
+        <button class="profile-tab" onclick="switchProfileTab('projects', event)">Projects (${projRes.length})</button>
         ${adminTabs}
       </div>
 
@@ -100,7 +255,20 @@ async function loadProfile() {
     `;
   } catch(e) {
     content.innerHTML = '<div class="empty-state"><h3>Failed to load profile</h3></div>';
+    console.error(e);
   }
+}
+
+function formatTimeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString('en', {month:'short', year:'numeric'});
 }
 
 function renderDeckCard(d) {
@@ -133,15 +301,56 @@ function renderProjectCard(p) {
     </div>`;
 }
 
-function switchProfileTab(name) {
+function switchProfileTab(name, ev) {
   document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.profile-tab-view').forEach(v => v.classList.remove('active'));
-  event.target.classList.add('active');
+  if (ev) ev.target.classList.add('active');
   const view = document.getElementById('ptab-' + name);
   if (view) view.classList.add('active');
 }
 
-loadProfile();
+loadProfile().then(() => {
+  // CountUp animation for stat numbers
+  const SATS_TARGET = document.querySelector('.profile-stat-value.gold[data-target]');
+  document.querySelectorAll('.stat-countup[data-target]').forEach(el => {
+    const target = parseInt(el.dataset.target, 10);
+    const prefix = el.dataset.prefix || '⚡ ';
+    const isSats = el.classList.contains('gold');
+    if (target === 0) { el.textContent = (isSats ? '⚡ ' : prefix) + '0'; return; }
+    const duration = Math.min(900, 200 + target * 0.4);
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const val = Math.round(eased * target);
+      el.textContent = (isSats ? '⚡ ' : prefix) + val.toLocaleString();
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+
+  // Activity chart tooltip
+  const tooltip = document.createElement('div');
+  tooltip.className = 'ac-tooltip';
+  document.body.appendChild(tooltip);
+
+  document.querySelectorAll('.ac-cell[data-date]').forEach(cell => {
+    cell.addEventListener('mouseenter', (e) => {
+      const count = parseInt(cell.dataset.count, 10);
+      const date = new Date(cell.dataset.date + 'T12:00:00Z');
+      const label = date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+      tooltip.textContent = `${count} contribution${count !== 1 ? 's' : ''} — ${label}`;
+      tooltip.classList.add('visible');
+    });
+    cell.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top  = (e.clientY - 28) + 'px';
+    });
+    cell.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    });
+  });
+});
 </script>
 <script>
 async function initAuth() {

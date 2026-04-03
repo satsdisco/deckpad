@@ -11,6 +11,7 @@ const unzipper = require('unzipper');
 const { DatabaseSync } = require('node:sqlite');
 const puppeteer = require('puppeteer');
 const cookieSession = require('cookie-session');
+const QRCode = require('qrcode');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,9 @@ const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const THUMBNAILS_DIR = path.join(ROOT, 'thumbnails');
 const TEMP_DIR = path.join(ROOT, 'temp');
 const DB_PATH = path.join(ROOT, 'deckpad.db');
+const ADMIN_LN_ADDRESS = 'lunarpad@21m.lol';
+const LNBITS_URL = process.env.LNBITS_URL || 'https://21m.lol';
+const LNBITS_INVOICE_KEY = process.env.LNBITS_INVOICE_KEY || '';
 
 for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -149,7 +153,100 @@ db.exec(`
     demo_url    TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS bounty_payments (
+    id              TEXT PRIMARY KEY,
+    bounty_id       TEXT NOT NULL,
+    user_id         TEXT,
+    user_name       TEXT,
+    amount_sats     INTEGER NOT NULL,
+    payment_type    TEXT NOT NULL DEFAULT 'fund',
+    payment_request TEXT,
+    payment_hash    TEXT,
+    verify_url      TEXT,
+    status          TEXT DEFAULT 'pending',
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at    DATETIME,
+    FOREIGN KEY (bounty_id) REFERENCES bounties(id)
+  );
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS zaps (
+    id              TEXT PRIMARY KEY,
+    target_type     TEXT NOT NULL,
+    target_id       TEXT NOT NULL,
+    user_id         TEXT,
+    user_name       TEXT,
+    amount_sats     INTEGER NOT NULL,
+    payment_request TEXT,
+    payment_hash    TEXT,
+    verify_url      TEXT,
+    status          TEXT DEFAULT 'pending',
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at    DATETIME
+  );
+`);
+
+// ─── Schema migrations (safe on existing DBs) ────────────────────────────────
+for (const sql of [
+  'ALTER TABLE users ADD COLUMN lightning_address TEXT',
+  'ALTER TABLE users ADD COLUMN badges TEXT',
+  'ALTER TABLE users ADD COLUMN total_sats_received INTEGER DEFAULT 0',
+  'ALTER TABLE bounties ADD COLUMN winner_id TEXT',
+  'ALTER TABLE bounties ADD COLUMN winner_name TEXT',
+  'ALTER TABLE bounties ADD COLUMN paid_out INTEGER DEFAULT 0',
+  'ALTER TABLE bounties ADD COLUMN funded_amount INTEGER DEFAULT 0',
+  'ALTER TABLE projects ADD COLUMN total_sats_received INTEGER DEFAULT 0',
+  'ALTER TABLE bounty_payments ADD COLUMN payment_hash TEXT',
+  'ALTER TABLE zaps ADD COLUMN payment_hash TEXT',
+]) {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+}
+
+// ─── Badge definitions ────────────────────────────────────────────────────────
+
+const BADGES = {
+  first_build: { id: 'first_build', emoji: '🔨', name: 'First Build',       desc: 'Submitted your first project' },
+  first_sats:  { id: 'first_sats',  emoji: '⚡', name: 'First Sats',        desc: 'Won your first bounty' },
+  demo_champ:  { id: 'demo_champ',  emoji: '🏆', name: 'Demo Day Champion', desc: 'Won a demo day bounty' },
+  streak:      { id: 'streak',      emoji: '🔥', name: 'On a Streak',       desc: 'Submitted projects in 2+ events' },
+};
+
+function checkAndAwardBadges(userId) {
+  const user = db.prepare('SELECT badges FROM users WHERE id = ?').get(userId);
+  if (!user) return;
+  let badges = [];
+  try { badges = JSON.parse(user.badges || '[]'); } catch { badges = []; }
+  const has = (id) => badges.includes(id);
+
+  if (!has('first_build')) {
+    const c = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(userId)?.c || 0;
+    if (c >= 1) badges.push('first_build');
+  }
+  if (!has('first_sats')) {
+    const won = db.prepare('SELECT id FROM bounties WHERE winner_id = ? AND paid_out = 1').get(userId);
+    if (won) badges.push('first_sats');
+  }
+  if (!has('demo_champ')) {
+    const champ = db.prepare(`
+      SELECT b.id FROM bounties b
+      JOIN events e ON b.event_id = e.id
+      WHERE b.winner_id = ? AND e.event_type = 'demo-day'
+    `).get(userId);
+    if (champ) badges.push('demo_champ');
+  }
+  if (!has('streak')) {
+    const ev = db.prepare(`
+      SELECT COUNT(DISTINCT b.event_id) as cnt
+      FROM projects p JOIN bounties b ON p.bounty_id = b.id
+      WHERE p.user_id = ? AND b.event_id IS NOT NULL
+    `).get(userId);
+    if (ev && ev.cnt >= 2) badges.push('streak');
+  }
+
+  db.prepare('UPDATE users SET badges = ? WHERE id = ?').run(JSON.stringify(badges), userId);
+}
 
 const stmts = {
   insert: db.prepare(`
@@ -333,7 +430,7 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (req.user) {
-    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin } });
+    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin, lightning_address: req.user.lightning_address || null } });
   } else {
     res.json({ user: null });
   }
@@ -378,6 +475,7 @@ app.get('/profile', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'publi
 app.get('/profile/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
 app.get('/vote',     requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'vote.html')));
 app.get('/admin',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'admin.html')));
+app.get('/bounty/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'bounty.html')));
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
 
@@ -593,7 +691,7 @@ app.post('/api/bounties', requireAuth, (req, res) => {
 app.get('/api/bounties/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM bounties WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  row.participants = db.prepare('SELECT id, user_name, created_at FROM bounty_participants WHERE bounty_id = ? ORDER BY created_at ASC').all(req.params.id);
+  row.participants = db.prepare('SELECT id, user_id, user_name, created_at FROM bounty_participants WHERE bounty_id = ? ORDER BY created_at ASC').all(req.params.id);
   res.json(row);
 });
 
@@ -664,6 +762,395 @@ app.delete('/api/bounties/:id', requireAuth, requireAdmin, (req, res) => {
   db.prepare('DELETE FROM bounty_participants WHERE bounty_id = ?').run(req.params.id);
   db.prepare('DELETE FROM bounties WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// GET /api/bounties/:id/winner — winner info (public)
+app.get('/api/bounties/:id/winner', (req, res) => {
+  const bounty = db.prepare('SELECT winner_id, winner_name, paid_out FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) return res.status(404).json({ error: 'Not found' });
+  if (!bounty.winner_id) return res.json({ winner: null });
+  const winner = db.prepare('SELECT id, name, lightning_address FROM users WHERE id = ?').get(bounty.winner_id);
+  res.json({ winner_id: bounty.winner_id, winner_name: bounty.winner_name, paid_out: bounty.paid_out, lightning_address: winner ? winner.lightning_address : null });
+});
+
+// POST /api/bounties/:id/approve-winner — admin sets winner, status → claimed
+app.post('/api/bounties/:id/approve-winner', requireAuth, requireAdmin, (req, res) => {
+  const { winner_id, winner_name } = req.body;
+  if (!winner_id || !winner_name) return res.status(400).json({ error: 'winner_id and winner_name required' });
+  const bounty = db.prepare('SELECT id FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) return res.status(404).json({ error: 'Not found' });
+  db.prepare("UPDATE bounties SET winner_id = ?, winner_name = ?, status = 'claimed' WHERE id = ?").run(winner_id, winner_name, req.params.id);
+  checkAndAwardBadges(winner_id);
+  res.json({ ok: true });
+});
+
+// POST /api/bounties/:id/mark-paid — admin marks payout done, status → completed
+app.post('/api/bounties/:id/mark-paid', requireAuth, requireAdmin, (req, res) => {
+  const bounty = db.prepare('SELECT id FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) return res.status(404).json({ error: 'Not found' });
+  db.prepare("UPDATE bounties SET paid_out = 1, status = 'completed' WHERE id = ?").run(req.params.id);
+  const paidBounty = db.prepare('SELECT winner_id FROM bounties WHERE id = ?').get(req.params.id);
+  if (paidBounty?.winner_id) checkAndAwardBadges(paidBounty.winner_id);
+  res.json({ ok: true });
+});
+
+// GET /api/config/lightning — public Lightning config
+app.get('/api/config/lightning', (req, res) => {
+  res.json({ admin_ln_address: ADMIN_LN_ADDRESS });
+});
+
+// ─── Lightning / LNURL API ────────────────────────────────────────────────────
+
+// Helper: resolve a Lightning address → LNURL-pay metadata
+async function resolveLnAddress(address) {
+  const [user, domain] = address.split('@');
+  if (!user || !domain) throw new Error('Invalid Lightning address');
+  const url = `https://${domain}/.well-known/lnurlp/${encodeURIComponent(user)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`LNURL resolve failed: ${res.status}`);
+  const data = await res.json();
+  if (data.tag !== 'payRequest') throw new Error('Not a payRequest endpoint');
+  return data; // { callback, minSendable, maxSendable, metadata, ... }
+}
+
+// Helper: fetch invoice from LNURL callback
+async function fetchLnInvoice(callback, amountMsats) {
+  const url = new URL(callback);
+  url.searchParams.set('amount', String(amountMsats));
+  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`Invoice fetch failed: ${res.status}`);
+  const data = await res.json();
+  if (data.status === 'ERROR') throw new Error(data.reason || 'Invoice error');
+  if (!data.pr) throw new Error('No payment_request in response');
+  // Extract payment hash from bolt11 (bytes 12+, 32 bytes after tag 1)
+  // We store verify_url if provided; otherwise we derive from invoice
+  return {
+    payment_request: data.pr,
+    verify_url: data.verify || null,
+  };
+}
+
+// Helper: generate themed QR code as data URL
+async function makeQrDataUrl(data) {
+  return await QRCode.toDataURL(data, {
+    width: 320,
+    margin: 2,
+    color: { dark: '#F2B134', light: '#0d0f1a' },
+  });
+}
+
+// ─── LNbits Direct API Helpers ────────────────────────────────────────────
+
+async function lnbitsCreateInvoice(amountSats, memo) {
+  if (!LNBITS_INVOICE_KEY) throw new Error('LNBITS_INVOICE_KEY not configured');
+  const res = await fetch(`${LNBITS_URL}/api/v1/payments`, {
+    method: 'POST',
+    headers: { 'X-Api-Key': LNBITS_INVOICE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ out: false, amount: amountSats, memo }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`LNbits error: ${res.status}`);
+  const data = await res.json();
+  return {
+    payment_request: data.bolt11 || data.payment_request,
+    payment_hash: data.payment_hash,
+  };
+}
+
+async function lnbitsCheckPayment(paymentHash) {
+  if (!LNBITS_INVOICE_KEY) return { paid: false };
+  const res = await fetch(`${LNBITS_URL}/api/v1/payments/${paymentHash}`, {
+    headers: { 'X-Api-Key': LNBITS_INVOICE_KEY },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) return { paid: false };
+  const data = await res.json();
+  return { paid: !!data.paid, status: data.status };
+}
+
+// POST /api/lightning/resolve — server-side LNURL resolution (avoids CORS)
+app.post('/api/lightning/resolve', async (req, res) => {
+  const { lightning_address } = req.body;
+  if (!lightning_address) return res.status(400).json({ error: 'lightning_address required' });
+  try {
+    const data = await resolveLnAddress(lightning_address.trim());
+    res.json({
+      callback: data.callback,
+      minSendable: data.minSendable,
+      maxSendable: data.maxSendable,
+      metadata: data.metadata,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// POST /api/lightning/invoice — resolve LN address + get invoice
+app.post('/api/lightning/invoice', async (req, res) => {
+  const { lightning_address, amount_sats } = req.body;
+  if (!lightning_address || !amount_sats) return res.status(400).json({ error: 'lightning_address and amount_sats required' });
+  const sats = parseInt(amount_sats);
+  if (!sats || sats < 1) return res.status(400).json({ error: 'Invalid amount' });
+  try {
+    const lnData = await resolveLnAddress(lightning_address.trim());
+    const msats = sats * 1000;
+    if (msats < lnData.minSendable) return res.status(400).json({ error: `Amount too small (min ${lnData.minSendable / 1000} sats)` });
+    if (msats > lnData.maxSendable) return res.status(400).json({ error: `Amount too large (max ${lnData.maxSendable / 1000} sats)` });
+    const inv = await fetchLnInvoice(lnData.callback, msats);
+    res.json({ payment_request: inv.payment_request, verify_url: inv.verify_url });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// POST /api/bounties/:id/fund — generate invoice to fund this bounty
+app.post('/api/bounties/:id/fund', requireAuth, async (req, res) => {
+  const bounty = db.prepare('SELECT * FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) return res.status(404).json({ error: 'Bounty not found' });
+  const amount_sats = parseInt(req.body.amount_sats);
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
+  try {
+    // Use LNbits API directly for reliable invoice creation + verification
+    const inv = await lnbitsCreateInvoice(amount_sats, `Fund bounty: ${bounty.title}`);
+    const paymentId = crypto.randomUUID();
+    db.prepare(`INSERT INTO bounty_payments (id, bounty_id, user_id, user_name, amount_sats, payment_type, payment_request, payment_hash, verify_url, status)
+      VALUES (?, ?, ?, ?, ?, 'fund', ?, ?, NULL, 'pending')`).run(
+      paymentId, bounty.id,
+      req.user.id, req.user.name || req.user.email,
+      amount_sats, inv.payment_request, inv.payment_hash
+    );
+    const qrData = 'lightning:' + inv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({
+      payment_id: paymentId,
+      payment_request: inv.payment_request,
+      payment_hash: inv.payment_hash,
+      qr_data: qrData,
+      qr_data_url,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// GET /api/bounties/:id/payments — all payments for this bounty
+app.get('/api/bounties/:id/payments', (req, res) => {
+  const payments = db.prepare(
+    `SELECT id, user_name, amount_sats, payment_type, status, created_at, confirmed_at
+     FROM bounty_payments WHERE bounty_id = ? ORDER BY created_at DESC`
+  ).all(req.params.id);
+  res.json(payments);
+});
+
+// GET /api/lightning/verify/:payment_id — check payment via LNbits API
+app.get('/api/lightning/verify/:payment_id', async (req, res) => {
+  const payment = db.prepare('SELECT * FROM bounty_payments WHERE id = ?').get(req.params.payment_id);
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.status === 'confirmed') return res.json({ settled: true, amount_sats: payment.amount_sats });
+  try {
+    // Try LNbits API first (using payment_hash)
+    let paid = false;
+    if (payment.payment_hash && LNBITS_INVOICE_KEY) {
+      const check = await lnbitsCheckPayment(payment.payment_hash);
+      paid = check.paid;
+    } else if (payment.verify_url) {
+      // Fallback to verify URL for non-LNbits invoices
+      const vRes = await fetch(payment.verify_url, { signal: AbortSignal.timeout(6000) });
+      if (vRes.ok) { const vData = await vRes.json(); paid = !!vData.settled; }
+    } else {
+      return res.json({ settled: false, amount_sats: payment.amount_sats, no_verify: true });
+    }
+    if (paid) {
+      db.prepare(`UPDATE bounty_payments SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(payment.id);
+      if (payment.payment_type === 'fund') {
+        db.prepare(`UPDATE bounties SET funded_amount = funded_amount + ? WHERE id = ?`).run(payment.amount_sats, payment.bounty_id);
+      } else if (payment.payment_type === 'payout') {
+        db.prepare(`UPDATE bounties SET paid_out = 1, status = 'completed' WHERE id = ?`).run(payment.bounty_id);
+        const b = db.prepare('SELECT winner_id FROM bounties WHERE id = ?').get(payment.bounty_id);
+        if (b?.winner_id) checkAndAwardBadges(b.winner_id);
+      }
+      return res.json({ settled: true, amount_sats: payment.amount_sats });
+    }
+    res.json({ settled: false, amount_sats: payment.amount_sats });
+  } catch (e) {
+    res.json({ settled: false, amount_sats: payment.amount_sats, error: e.message });
+  }
+});
+
+// POST /api/bounties/:id/pay-winner — admin: generate invoice to pay winner
+app.post('/api/bounties/:id/pay-winner', requireAuth, requireAdmin, async (req, res) => {
+  const bounty = db.prepare('SELECT * FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) return res.status(404).json({ error: 'Bounty not found' });
+  if (!bounty.winner_id) return res.status(400).json({ error: 'No winner set' });
+  const winner = db.prepare('SELECT id, name, lightning_address FROM users WHERE id = ?').get(bounty.winner_id);
+  if (!winner?.lightning_address) return res.status(400).json({ error: 'Winner has no Lightning address set' });
+  const amount_sats = parseInt(req.body.amount_sats) || bounty.sats_amount;
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'Invalid payout amount' });
+  try {
+    const lnData = await resolveLnAddress(winner.lightning_address);
+    const msats = amount_sats * 1000;
+    if (msats < lnData.minSendable) return res.status(400).json({ error: `Amount too small for winner's wallet (min ${lnData.minSendable / 1000} sats)` });
+    if (msats > lnData.maxSendable) return res.status(400).json({ error: `Amount too large for winner's wallet (max ${lnData.maxSendable / 1000} sats)` });
+    const inv = await fetchLnInvoice(lnData.callback, msats);
+    const paymentId = crypto.randomUUID();
+    db.prepare(`INSERT INTO bounty_payments (id, bounty_id, user_id, user_name, amount_sats, payment_type, payment_request, verify_url, status)
+      VALUES (?, ?, ?, ?, ?, 'payout', ?, ?, 'pending')`).run(
+      paymentId, bounty.id,
+      winner.id, winner.name,
+      amount_sats, inv.payment_request, inv.verify_url
+    );
+    const qrData = 'lightning:' + inv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({
+      payment_id: paymentId,
+      payment_request: inv.payment_request,
+      verify_url: inv.verify_url,
+      qr_data: qrData,
+      qr_data_url,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// PUT /api/profile/lightning — save own Lightning address
+app.put('/api/profile/lightning', requireAuth, (req, res) => {
+  const { lightning_address } = req.body;
+  db.prepare('UPDATE users SET lightning_address = ? WHERE id = ?').run(lightning_address || null, req.user.id);
+  res.json({ ok: true });
+});
+
+// POST /api/projects/:id/zap — generate invoice to zap this project's builder
+app.post('/api/projects/:id/zap', requireAuth, async (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const amount_sats = parseInt(req.body.amount_sats);
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
+
+  // Find builder's Lightning address — direct to them if set
+  let recipientAddress = ADMIN_LN_ADDRESS;
+  let recipient = 'LunarPad';
+
+  if (project.user_id) {
+    const builder = db.prepare('SELECT name, lightning_address FROM users WHERE id = ?').get(project.user_id);
+    if (builder?.lightning_address) {
+      recipientAddress = builder.lightning_address;
+      recipient = builder.name || project.builder;
+    }
+  }
+  // Fallback: match by builder name
+  if (recipientAddress === ADMIN_LN_ADDRESS && project.builder) {
+    const builder = db.prepare("SELECT name, lightning_address FROM users WHERE name = ? AND lightning_address IS NOT NULL LIMIT 1").get(project.builder);
+    if (builder?.lightning_address) {
+      recipientAddress = builder.lightning_address;
+      recipient = builder.name || project.builder;
+    }
+  }
+
+  try {
+    // Use LNbits API for invoices going to admin wallet, LNURL for direct-to-builder
+    let inv;
+    if (recipientAddress === ADMIN_LN_ADDRESS && LNBITS_INVOICE_KEY) {
+      const lnbitsInv = await lnbitsCreateInvoice(amount_sats, `Zap project: ${project.name} by ${project.builder}`);
+      inv = { payment_request: lnbitsInv.payment_request, payment_hash: lnbitsInv.payment_hash, verify_url: null };
+    } else {
+      const lnData = await resolveLnAddress(recipientAddress);
+      const msats = amount_sats * 1000;
+      if (msats < lnData.minSendable) return res.status(400).json({ error: `Amount too small (min ${lnData.minSendable / 1000} sats)` });
+      if (msats > lnData.maxSendable) return res.status(400).json({ error: `Amount too large (max ${lnData.maxSendable / 1000} sats)` });
+      const lnurlInv = await fetchLnInvoice(lnData.callback, msats);
+      inv = { payment_request: lnurlInv.payment_request, payment_hash: null, verify_url: lnurlInv.verify_url };
+    }
+    const zapId = crypto.randomUUID();
+    db.prepare(`INSERT INTO zaps (id, target_type, target_id, user_id, user_name, amount_sats, payment_request, payment_hash, verify_url, status)
+      VALUES (?, 'project', ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(
+      zapId, project.id,
+      req.user.id, req.user.name || req.user.email,
+      amount_sats, inv.payment_request, inv.payment_hash, inv.verify_url
+    );
+    const qrData = 'lightning:' + inv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({ zap_id: zapId, payment_request: inv.payment_request, qr_data_url, recipient });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// GET /api/projects/:id/zaps — confirmed zaps for this project
+app.get('/api/projects/:id/zaps', (req, res) => {
+  const zaps = db.prepare(
+    `SELECT id, user_name, amount_sats, created_at
+     FROM zaps WHERE target_type = 'project' AND target_id = ? AND status = 'confirmed'
+     ORDER BY created_at DESC LIMIT 20`
+  ).all(req.params.id);
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(amount_sats), 0) as total FROM zaps WHERE target_type = 'project' AND target_id = ? AND status = 'confirmed'`
+  ).get(req.params.id);
+  res.json({ zaps, total_sats: row?.total || 0 });
+});
+
+// GET /api/zaps/verify/:zap_id — check payment via LNbits API or verify URL
+app.get('/api/zaps/verify/:zap_id', async (req, res) => {
+  const zap = db.prepare('SELECT * FROM zaps WHERE id = ?').get(req.params.zap_id);
+  if (!zap) return res.status(404).json({ error: 'Zap not found' });
+  if (zap.status === 'confirmed') return res.json({ settled: true, amount_sats: zap.amount_sats });
+  try {
+    let paid = false;
+    if (zap.payment_hash && LNBITS_INVOICE_KEY) {
+      const check = await lnbitsCheckPayment(zap.payment_hash);
+      paid = check.paid;
+    } else if (zap.verify_url) {
+      const vRes = await fetch(zap.verify_url, { signal: AbortSignal.timeout(6000) });
+      if (vRes.ok) { const vData = await vRes.json(); paid = !!vData.settled; }
+    } else {
+      return res.json({ settled: false, amount_sats: zap.amount_sats, no_verify: true });
+    }
+    if (paid) {
+      db.prepare(`UPDATE zaps SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(zap.id);
+      db.prepare(`UPDATE projects SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
+      const project = db.prepare('SELECT user_id FROM projects WHERE id = ?').get(zap.target_id);
+      if (project?.user_id) {
+        db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, project.user_id);
+      }
+      return res.json({ settled: true, amount_sats: zap.amount_sats });
+    }
+    res.json({ settled: false, amount_sats: zap.amount_sats });
+  } catch (e) {
+    res.json({ settled: false, amount_sats: zap.amount_sats, error: e.message });
+  }
+});
+
+// POST /api/lightning/confirm/:payment_id — manually confirm payment (when no verify URL)
+app.post('/api/lightning/confirm/:payment_id', requireAuth, (req, res) => {
+  const payment = db.prepare('SELECT * FROM bounty_payments WHERE id = ?').get(req.params.payment_id);
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.status === 'confirmed') return res.json({ settled: true, amount_sats: payment.amount_sats });
+  // Only the payer or admin can confirm
+  if (payment.user_id !== req.user.id && !req.user.is_admin) return res.status(403).json({ error: 'Not authorized' });
+  db.prepare(`UPDATE bounty_payments SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(payment.id);
+  if (payment.payment_type === 'fund') {
+    db.prepare(`UPDATE bounties SET funded_amount = funded_amount + ? WHERE id = ?`).run(payment.amount_sats, payment.bounty_id);
+  } else if (payment.payment_type === 'payout') {
+    db.prepare(`UPDATE bounties SET paid_out = 1, status = 'completed' WHERE id = ?`).run(payment.bounty_id);
+    const b = db.prepare('SELECT winner_id FROM bounties WHERE id = ?').get(payment.bounty_id);
+    if (b?.winner_id) checkAndAwardBadges(b.winner_id);
+  }
+  res.json({ settled: true, amount_sats: payment.amount_sats });
+});
+
+// POST /api/zaps/confirm/:zap_id — manually confirm zap (when no verify URL)
+app.post('/api/zaps/confirm/:zap_id', requireAuth, (req, res) => {
+  const zap = db.prepare('SELECT * FROM zaps WHERE id = ?').get(req.params.zap_id);
+  if (!zap) return res.status(404).json({ error: 'Zap not found' });
+  if (zap.status === 'confirmed') return res.json({ settled: true, amount_sats: zap.amount_sats });
+  if (zap.user_id !== req.user.id && !req.user.is_admin) return res.status(403).json({ error: 'Not authorized' });
+  db.prepare(`UPDATE zaps SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(zap.id);
+  db.prepare(`UPDATE projects SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
+  const project = db.prepare('SELECT user_id FROM projects WHERE id = ?').get(zap.target_id);
+  if (project?.user_id) {
+    db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, project.user_id);
+  }
+  res.json({ settled: true, amount_sats: zap.amount_sats });
 });
 
 // Delete project (owner or admin)
@@ -767,13 +1254,20 @@ app.get('/api/events/:id/rsvps', (req, res) => {
 // ─── Projects API ─────────────────────────────────────────────────────────────
 
 app.get('/api/projects', (req, res) => {
-  const rows = db.prepare(`
+  const { bounty_id } = req.query;
+  let query = `
     SELECT p.*, COALESCE(v.vote_count, 0) as votes, b.title as bounty_title
     FROM projects p
     LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'project' GROUP BY target_id) v ON p.id = v.target_id
     LEFT JOIN bounties b ON p.bounty_id = b.id
-    ORDER BY votes DESC, p.created_at DESC
-  `).all();
+  `;
+  const params = [];
+  if (bounty_id) {
+    query += ` WHERE p.bounty_id = ?`;
+    params.push(bounty_id);
+  }
+  query += ` ORDER BY votes DESC, p.created_at DESC`;
+  const rows = db.prepare(query).all(...params);
   res.json(rows);
 });
 
@@ -791,6 +1285,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
     category || null, bounty_id || null, req.user?.id || null, deck_id || null,
     repo_url || repo || null, demo_url || demo || null
   );
+  if (req.user?.id) checkAndAwardBadges(req.user.id);
   res.json({ id });
 });
 
@@ -874,12 +1369,42 @@ app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
 
 // ─── User Profile API ─────────────────────────────────────────────────────────
 
+app.get('/api/leaderboard', (req, res) => {
+  const rows = db.prepare(`
+    SELECT u.id as user_id, u.name, u.avatar, u.badges,
+      COALESCE(SUM(CASE WHEN b.paid_out = 1 THEN b.sats_amount ELSE 0 END), 0) as bounty_sats,
+      COUNT(CASE WHEN b.paid_out = 1 THEN 1 END) as bounties_won,
+      COALESCE(u.total_sats_received, 0) as zaps_received
+    FROM users u
+    LEFT JOIN bounties b ON b.winner_id = u.id
+    WHERE u.name IS NOT NULL
+    GROUP BY u.id
+    ORDER BY (COALESCE(SUM(CASE WHEN b.paid_out = 1 THEN b.sats_amount ELSE 0 END), 0) + COALESCE(u.total_sats_received, 0)) DESC, bounties_won DESC
+    LIMIT 20
+  `).all();
+
+  const result = rows.map((u, i) => {
+    const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
+    let badges = [];
+    try { badges = JSON.parse(u.badges || '[]'); } catch {}
+    const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
+    return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), bounties_won: u.bounties_won, projects_count, badges };
+  });
+  res.json(result);
+});
+
 app.get('/api/users/:id', (req, res) => {
-  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at FROM users WHERE id = ?').get(req.params.id);
+  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at, lightning_address, badges FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const deckCount = db.prepare('SELECT COUNT(*) as c FROM decks WHERE uploaded_by = ?').get(req.params.id).c;
   const projectCount = db.prepare("SELECT COUNT(*) as c FROM projects WHERE user_id = ? OR builder = ?").get(req.params.id, user.name).c;
-  res.json({ ...user, deck_count: deckCount, project_count: projectCount });
+  const bountySats = db.prepare("SELECT COALESCE(SUM(sats_amount), 0) as s FROM bounties WHERE winner_id = ? AND paid_out = 1").get(req.params.id)?.s || 0;
+  const bountiesWon = db.prepare("SELECT COUNT(*) as c FROM bounties WHERE winner_id = ? AND paid_out = 1").get(req.params.id)?.c || 0;
+  const zapsReceived = db.prepare("SELECT COALESCE(total_sats_received, 0) as s FROM users WHERE id = ?").get(req.params.id)?.s || 0;
+  const totalSats = Number(bountySats) + Number(zapsReceived);
+  let badges = [];
+  try { badges = JSON.parse(user.badges || '[]'); } catch {}
+  res.json({ ...user, badges, deck_count: deckCount, project_count: projectCount, total_sats_earned: totalSats, bounty_sats: Number(bountySats), zaps_received: Number(zapsReceived), bounties_won: bountiesWon });
 });
 
 app.get('/api/users/:id/decks', (req, res) => {
@@ -899,6 +1424,84 @@ app.get('/api/users/:id/projects', (req, res) => {
     ORDER BY p.created_at DESC
   `).all(req.params.id, user.name);
   res.json(rows);
+});
+
+app.get('/api/users/:id/activity', (req, res) => {
+  const userId = req.params.id;
+  const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId);
+  if (!user) return res.json([]);
+
+  const items = [];
+
+  const wonBounties = db.prepare(`
+    SELECT id, title, sats_amount, created_at FROM bounties
+    WHERE winner_id = ? AND paid_out = 1 ORDER BY created_at DESC LIMIT 10
+  `).all(userId);
+  for (const b of wonBounties) {
+    items.push({ type: 'bounty_won', text: `Won ${b.sats_amount.toLocaleString()} sats on "${b.title}"`, created_at: b.created_at, ref_id: b.id });
+  }
+
+  const projects = db.prepare(`
+    SELECT id, name, created_at FROM projects WHERE user_id = ? ORDER BY created_at DESC LIMIT 10
+  `).all(userId);
+  for (const p of projects) {
+    items.push({ type: 'project', text: `Submitted "${p.name}"`, created_at: p.created_at, ref_id: p.id });
+  }
+
+  const joined = db.prepare(`
+    SELECT bp.created_at, b.id as bounty_id, b.title
+    FROM bounty_participants bp JOIN bounties b ON bp.bounty_id = b.id
+    WHERE bp.user_id = ? ORDER BY bp.created_at DESC LIMIT 10
+  `).all(userId);
+  for (const j of joined) {
+    items.push({ type: 'bounty_joined', text: `Joined "${j.title}"`, created_at: j.created_at, ref_id: j.bounty_id });
+  }
+
+  items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  res.json(items.slice(0, 20));
+});
+
+// ─── Activity Chart API ───────────────────────────────────────────────────────
+
+app.get('/api/users/:id/activity-chart', (req, res) => {
+  const userId = req.params.id;
+  const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId);
+  if (!user) return res.json({ days: [] });
+
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 364);
+  const startStr = start.toISOString().split('T')[0];
+  const endStr = end.toISOString().split('T')[0];
+
+  const rows = db.prepare(`
+    SELECT DATE(created_at) as day, COUNT(*) as cnt FROM (
+      SELECT created_at FROM bounty_participants WHERE user_id = ?1
+      UNION ALL
+      SELECT created_at FROM projects WHERE user_id = ?1
+      UNION ALL
+      SELECT created_at FROM bounties WHERE winner_id = ?1 AND paid_out = 1
+      UNION ALL
+      SELECT created_at FROM decks WHERE uploaded_by = ?1
+      UNION ALL
+      SELECT created_at FROM votes WHERE voter_ip = ?1
+    )
+    WHERE DATE(created_at) >= ?2 AND DATE(created_at) <= ?3
+    GROUP BY day
+  `).all(userId, startStr, endStr);
+
+  const countMap = {};
+  for (const r of rows) countMap[r.day] = r.cnt;
+
+  const days = [];
+  for (let i = 364; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    days.push({ date: dateStr, count: countMap[dateStr] || 0 });
+  }
+
+  res.json({ days });
 });
 
 // ─── Unified Vote API ─────────────────────────────────────────────────────────
