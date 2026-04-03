@@ -14,7 +14,7 @@ const cookieSession = require('cookie-session');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const PORT = 3100;
+const PORT = parseInt(process.env.PORT) || 3100;
 const ROOT = __dirname;
 const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const THUMBNAILS_DIR = path.join(ROOT, 'thumbnails');
