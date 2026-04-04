@@ -388,17 +388,35 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // HSTS — enforce HTTPS on return visits (1 year)
+  if (process.env.BASE_URL) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  // CSP — restrict script/style/connect sources
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https: blob:",
+    "connect-src 'self'",
+    "frame-src 'self'",
+    "frame-ancestors 'none'",
+  ].join('; '));
   next();
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const isSecure = process.env.NODE_ENV === 'production' || !!process.env.BASE_URL;
 app.use(cookieSession({
-  name: 'deckpad_session',
+  name: isSecure ? '__Host-deckpad_session' : 'deckpad_session',
   keys: [process.env.SESSION_SECRET || 'dev-secret-change-me'],
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   sameSite: 'lax',
-  secure: process.env.NODE_ENV === 'production' || !!process.env.BASE_URL, // secure when behind HTTPS/tunnel
+  secure: isSecure,
+  httpOnly: true,
+  path: '/',
 }));
 
 // Rolling sessions — refresh cookie on each request
@@ -534,6 +552,10 @@ app.post('/auth/login', (req, res) => {
 
 app.get('/auth/logout', (req, res) => {
   req.session = null;
+  const cookieName = isSecure ? '__Host-deckpad_session' : 'deckpad_session';
+  res.clearCookie(cookieName);
+  res.clearCookie(cookieName + '.sig');
+  // Also clear old cookies in case of transition
   res.clearCookie('deckpad_session');
   res.clearCookie('deckpad_session.sig');
   res.redirect('/welcome');
