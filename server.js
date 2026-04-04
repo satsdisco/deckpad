@@ -415,6 +415,7 @@ const stmts = {
 // ─── Express app ─────────────────────────────────────────────────────────────
 
 const app = express();
+app.disable('x-powered-by');
 // Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -425,6 +426,8 @@ app.use((req, res, next) => {
   if (process.env.BASE_URL) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
+  // Permissions-Policy — lock down browser APIs
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()');
   // CSP — restrict script/style/connect sources
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
