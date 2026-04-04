@@ -176,9 +176,13 @@ async function loadEvent() {
 
     const attendingBadge = rsvpCount > 0 ? `<span>👥 ${rsvpCount} attending</span>` : '';
 
+    // Determine if event is in the past (ended)
+    const eventDate = ev.date ? new Date(ev.date + (ev.time ? 'T' + ev.time : 'T23:59:59')) : null;
+    const isEnded = eventDate ? (Date.now() - eventDate.getTime() > 86400000) : false;
+
     document.getElementById('eventContent').innerHTML = `
       <div class="event-hero">
-        <div class="event-hero-type">${esc(ev.event_type || ev.type || 'Event')}</div>
+        <div class="event-hero-type">${esc(ev.event_type || ev.type || 'Event')}${isEnded ? ' <span style="color:var(--muted);font-weight:400">(ended)</span>' : ''}</div>
         <div class="event-hero-name">${esc(ev.name)}</div>
         <div class="event-hero-meta">
           <span>📅 ${dateStr}${ev.time ? ' · ' + esc(ev.time) : ''}</span>
@@ -188,10 +192,14 @@ async function loadEvent() {
         ${prizePool ? `<div class="event-prize">⚡ ${prizePool.toLocaleString()} sats prize pool</div>` : ''}
         <div class="event-hero-row">
           <div class="event-hero-actions">
-            <button class="btn" onclick="document.getElementById('rsvpSection').style.display=document.getElementById('rsvpSection').style.display==='none'?'block':'none'">RSVP</button>
-            <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display=document.getElementById('signupSection').style.display==='none'?'block':'none'">Present at this Event</button>
-            <button class="btn" onclick="navigator.clipboard.writeText(window.location.href).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Share',1800)}).catch(()=>{})" title="Copy event URL">Share</button>
-            <a class="add-to-cal" id="addToCalBtn" style="display:none">📅 Add to Calendar</a>
+            ${isEnded ? `
+              <button class="btn" onclick="navigator.clipboard.writeText(window.location.href).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Share',1800)}).catch(()=>{})" title="Copy event URL">Share</button>
+            ` : `
+              <button class="btn" onclick="document.getElementById('rsvpSection').style.display=document.getElementById('rsvpSection').style.display==='none'?'block':'none'">RSVP</button>
+              <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display=document.getElementById('signupSection').style.display==='none'?'block':'none'">Present at this Event</button>
+              <button class="btn" onclick="navigator.clipboard.writeText(window.location.href).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Share',1800)}).catch(()=>{})" title="Copy event URL">Share</button>
+              <a class="add-to-cal" id="addToCalBtn" style="display:none">📅 Add to Calendar</a>
+            `}
             <a class="btn" id="goLiveBtn" style="display:none" href="#" target="_blank">🔴 Go Live</a>
           </div>
           <div class="event-hero-countdown">
@@ -249,12 +257,17 @@ async function loadEvent() {
         <div id="speakerRows">
           ${speakers.length
             ? speakers.map((sp, i) => renderSpeaker(sp, i+1)).join('')
-            : `<div class="empty-cta">
-                <div class="empty-cta-icon">🎤</div>
-                <h3>No speakers yet — be the first to present!</h3>
-                <p>Share your project, demo something you built, or talk about what you're learning.</p>
-                <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display='block';document.getElementById('signupSection').scrollIntoView({behavior:'smooth'})">Sign Up to Present</button>
-               </div>`}
+            : (isEnded
+              ? `<div class="empty-cta">
+                  <div class="empty-cta-icon">🎤</div>
+                  <h3>No presentations were recorded for this event.</h3>
+                 </div>`
+              : `<div class="empty-cta">
+                  <div class="empty-cta-icon">🎤</div>
+                  <h3>No speakers yet — be the first to present!</h3>
+                  <p>Share your project, demo something you built, or talk about what you're learning.</p>
+                  <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display='block';document.getElementById('signupSection').scrollIntoView({behavior:'smooth'})">Sign Up to Present</button>
+                 </div>`)}
         </div>
       </div>
 
@@ -280,7 +293,15 @@ async function loadEvent() {
       const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.name)}&dates=${start}/${end}&details=${encodeURIComponent(ev.description || '')}&location=${encodeURIComponent(ev.location || '')}`;
       calBtn.href = gcalUrl;
       calBtn.target = '_blank';
-      calBtn.style.display = '';
+      if (!isEnded) calBtn.style.display = '';
+    }
+
+    // BUG-002/003: Hide inappropriate CTAs for ended events
+    if (isEnded) {
+      const rsvp = document.getElementById('rsvpSection');
+      const signup = document.getElementById('signupSection');
+      if (rsvp) rsvp.remove();
+      if (signup) signup.remove();
     }
   } catch(e) {
     document.getElementById('eventContent').innerHTML = '<div class="error-state"><span>⚠️</span><p>Failed to load event.</p><button onclick="loadEvent()">Retry</button></div>';

@@ -398,7 +398,7 @@ app.use(cookieSession({
   keys: [process.env.SESSION_SECRET || 'dev-secret-change-me'],
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   sameSite: 'lax',
-  secure: false, // handled by Cloudflare tunnel
+  secure: process.env.NODE_ENV === 'production' || !!process.env.BASE_URL, // secure when behind HTTPS/tunnel
 }));
 
 // Rolling sessions — refresh cookie on each request
@@ -581,6 +581,14 @@ app.get('/decks',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'publ
 app.get('/upload',   requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'upload.html')));
 app.get('/deck/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'deck.html')));
 app.get('/build',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'build.html')));  // keep /build as alias
+// Catch bare routes without IDs — redirect to Build in Public
+app.get('/event', requireAuth, (_, res) => res.redirect('/'));
+app.get('/event/', requireAuth, (_, res) => res.redirect('/'));
+app.get('/project', requireAuth, (_, res) => res.redirect('/'));
+app.get('/project/', requireAuth, (_, res) => res.redirect('/'));
+app.get('/bounty', requireAuth, (_, res) => res.redirect('/'));
+app.get('/bounty/', requireAuth, (_, res) => res.redirect('/'));
+
 app.get('/event/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'event.html')));
 app.get('/project/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'project.html')));
 app.get('/profile', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
