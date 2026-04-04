@@ -127,6 +127,7 @@ async function loadEvent() {
           <span>📅 ${dateStr}${ev.time ? ' · ' + esc(ev.time) : ''}</span>
           ${ev.location ? `<span>📍 ${esc(ev.location)}</span>` : ''}
         </div>
+        ${ev.description ? `<div style="font-size:0.88rem;color:var(--text2);line-height:1.6;margin-bottom:12px;max-width:640px">${esc(ev.description)}</div>` : `<div style="font-size:0.82rem;color:var(--muted2);font-style:italic;margin-bottom:12px">No description yet</div>`}
         ${prizePool ? `<div class="event-prize">⚡ ${prizePool.toLocaleString()} sats prize pool</div>` : ''}
         <div class="event-hero-row">
           <div class="event-hero-actions">
