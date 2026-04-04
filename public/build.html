@@ -5,6 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Build in Public — LunarPad</title>
 <link rel="stylesheet" href="/css/style.css">
+<style>
+.event-hero-banner {
+  background: linear-gradient(135deg, rgba(124,92,252,0.12), rgba(60,203,218,0.06), rgba(13,15,26,0.95));
+  border: 1px solid rgba(124,92,252,0.2);
+  border-radius: var(--radius-lg);
+  padding: 32px 36px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.event-hero-banner::before {
+  content: ''; position: absolute; top: -50%; right: -20%; width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(124,92,252,0.08), transparent 70%);
+  pointer-events: none;
+}
+.event-hero-badge { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+.event-hero-title { font-size: 1.6rem; font-weight: 800; color: var(--text); margin-bottom: 8px; margin-top: 0; }
+.event-hero-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
+.event-hero-desc { font-size: 0.85rem; color: var(--text2); line-height: 1.6; margin-bottom: 16px; max-width: 560px; }
+.event-hero-countdown { display: flex; gap: 10px; margin-bottom: 20px; }
+.event-hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .event-hero-banner { padding: 20px; }
+  .event-hero-title { font-size: 1.2rem; }
+}
+</style>
 </head>
 <body>
 
@@ -45,6 +71,7 @@
             <span class="section-title">Upcoming Events</span>
             <button class="btn btn-sm" id="createEventBtn" style="display:none" onclick="document.getElementById('eventCreateModal').classList.add('open')">+ Create Event</button>
           </div>
+          <div id="eventHero"></div>
           <div class="event-carousel-wrap">
             <button class="carousel-nav prev" onclick="scrollCarousel(-1)">‹</button>
             <div class="event-carousel" id="eventsGrid"></div>
@@ -364,6 +391,7 @@ function safeUrl(u) { try { const p = new URL(u).protocol; return (p==='http:'||
 let eventsData = [];
 let speakersData = [];
 let nextDemoDay = null;
+let heroEventData = null;
 let countdownTimers = {};
 
 // ─── Sidebar Navigation ───────────────────────────────────────────────────
@@ -425,6 +453,13 @@ async function loadEvents() {
   try {
     const res = await fetch('/api/events');
     eventsData = await res.json();
+
+    // Hero: next upcoming event
+    const _now = new Date();
+    const _upcoming = eventsData.filter(ev => ev.date && new Date(ev.date) >= _now).sort((a, b) => new Date(a.date) - new Date(b.date));
+    heroEventData = _upcoming[0] || null;
+    renderHeroBanner(heroEventData);
+
     if (!eventsData.length) {
       grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">📅</div><h3>No upcoming events</h3><p>Nothing scheduled yet — stay tuned</p></div>`;
       return;
@@ -450,6 +485,35 @@ async function loadEvents() {
   } catch {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">📅</div><h3>Could not load events</h3><p>API unavailable</p></div>`;
   }
+}
+
+function renderHeroBanner(ev) {
+  const hero = document.getElementById('eventHero');
+  if (!hero) return;
+  if (!ev) { hero.innerHTML = ''; return; }
+  const evType = ev.event_type || ev.type || 'Event';
+  const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆', 'workshop': '🛠', 'meetup': '👥' };
+  const icon = typeIcons[evType] || '📅';
+  const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
+  const rawDesc = ev.description || '';
+  const desc = rawDesc.length > 120 ? rawDesc.slice(0, 120) + '…' : rawDesc;
+  hero.innerHTML = `
+    <div class="event-hero-banner">
+      <div class="event-hero-badge">${icon} NEXT UP</div>
+      <h2 class="event-hero-title">${esc(ev.name)}</h2>
+      <div class="event-hero-meta">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}</div>
+      ${desc ? `<p class="event-hero-desc">${esc(desc)}</p>` : ''}
+      <div class="event-hero-countdown">
+        <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-d">--</div><div class="countdown-chip-label">Days</div></div>
+        <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-h">--</div><div class="countdown-chip-label">Hrs</div></div>
+        <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-m">--</div><div class="countdown-chip-label">Min</div></div>
+        <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-s">--</div><div class="countdown-chip-label">Sec</div></div>
+      </div>
+      <div class="event-hero-cta">
+        <a href="/event/${esc(ev.id)}" class="btn btn-primary" style="padding:10px 28px;font-size:0.9rem">View Event →</a>
+        <a href="/event/${esc(ev.id)}" class="btn">RSVP</a>
+      </div>
+    </div>`;
 }
 
 function renderEventCard(ev) {
@@ -515,6 +579,20 @@ async function submitRsvp(id) {
 // ─── Countdown Timers ─────────────────────────────────────────────────────
 function updateCountdowns() {
   const now = Date.now();
+
+  // Hero countdown
+  if (heroEventData && heroEventData.date) {
+    const heroDate = new Date(heroEventData.date + (heroEventData.time ? 'T' + heroEventData.time : 'T00:00'));
+    const hDiff = heroDate.getTime() - now;
+    if (hDiff > 0) {
+      const hSet = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v).padStart(2, '0'); };
+      hSet('hero-cd-d', Math.floor(hDiff / 86400000));
+      hSet('hero-cd-h', Math.floor((hDiff % 86400000) / 3600000));
+      hSet('hero-cd-m', Math.floor((hDiff % 3600000) / 60000));
+      hSet('hero-cd-s', Math.floor((hDiff % 60000) / 1000));
+    }
+  }
+
   eventsData.forEach(ev => {
     if (!ev.date) return;
     const eventDate = new Date(ev.date + (ev.time ? 'T' + ev.time : 'T00:00'));

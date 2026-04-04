@@ -65,6 +65,53 @@
 .rsvp-card h3 { font-size: 0.9rem; font-weight: 700; color: var(--text); margin-bottom: 16px; }
 .rsvp-success { font-size: 0.85rem; color: var(--accent); padding: 12px; display: none; }
 
+/* About section */
+.event-about-section {
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px 28px; margin-bottom: 24px;
+}
+.event-about-heading {
+  font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin-bottom: 12px;
+}
+.event-about-body {
+  font-size: 0.9rem; color: var(--text2); line-height: 1.75; white-space: pre-wrap;
+}
+
+/* Speaker cards */
+.speaker-card {
+  background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 18px 20px; margin-bottom: 12px;
+  display: flex; gap: 16px; align-items: flex-start;
+  transition: border-color .15s;
+}
+.speaker-card:hover { border-color: rgba(124,92,252,.3); }
+.spk-avatar {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 0.85rem; color: #fff;
+  background: linear-gradient(135deg, #7c5cfc, #3ccbda);
+}
+.spk-card-body { flex: 1; min-width: 0; }
+.spk-card-name { font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.spk-card-project { font-size: 0.8rem; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.spk-card-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+.spk-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.duration-pill {
+  font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: 100px; color: var(--muted2);
+}
+.spk-card-right { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Empty CTA state */
+.empty-cta {
+  text-align: center; padding: 40px 24px;
+  background: var(--glass); border: 1px dashed var(--border); border-radius: var(--radius-lg);
+}
+.empty-cta-icon { font-size: 2rem; margin-bottom: 12px; }
+.empty-cta h3 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.empty-cta p { font-size: 0.82rem; color: var(--muted2); margin-bottom: 16px; }
+
 @media (max-width: 768px) {
   .event-hero { padding: 20px; }
   .event-hero-name { font-size: 1.2rem; }
@@ -105,19 +152,23 @@ function timeAgo(ds) { const m = Math.floor((Date.now()-new Date(ds).getTime())/
 
 async function loadEvent() {
   try {
-    const [evRes, bRes] = await Promise.all([
+    const [evRes, bRes, rsvpRes] = await Promise.all([
       fetch('/api/events/' + eventId).then(r => r.json()),
-      fetch('/api/events/' + eventId + '/bounties').then(r => r.json()).catch(() => [])
+      fetch('/api/events/' + eventId + '/bounties').then(r => r.json()).catch(() => []),
+      fetch('/api/events/' + eventId + '/rsvps').then(r => r.json()).catch(() => null)
     ]);
     eventData = evRes;
     const ev = eventData;
     const bounties = bRes;
+    const rsvpCount = rsvpRes ? (typeof rsvpRes.count === 'number' ? rsvpRes.count : (Array.isArray(rsvpRes) ? rsvpRes.length : 0)) : 0;
     const prizePool = bounties.reduce((s, b) => s + (b.sats_amount || 0), 0);
 
     document.title = ev.name + ' — LunarPad';
 
     const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : 'TBD';
     const speakers = (ev.speakers || []).sort((a,b) => (b.votes||0) - (a.votes||0));
+
+    const attendingBadge = rsvpCount > 0 ? `<span>👥 ${rsvpCount} attending</span>` : '';
 
     document.getElementById('eventContent').innerHTML = `
       <div class="event-hero">
@@ -126,13 +177,14 @@ async function loadEvent() {
         <div class="event-hero-meta">
           <span>📅 ${dateStr}${ev.time ? ' · ' + esc(ev.time) : ''}</span>
           ${ev.location ? `<span>📍 ${esc(ev.location)}</span>` : ''}
+          ${attendingBadge}
         </div>
-        ${ev.description ? `<div style="font-size:0.88rem;color:var(--text2);line-height:1.6;margin-bottom:12px;max-width:640px">${esc(ev.description)}</div>` : `<div style="font-size:0.82rem;color:var(--muted2);font-style:italic;margin-bottom:12px">No description yet</div>`}
         ${prizePool ? `<div class="event-prize">⚡ ${prizePool.toLocaleString()} sats prize pool</div>` : ''}
         <div class="event-hero-row">
           <div class="event-hero-actions">
             <button class="btn" onclick="document.getElementById('rsvpSection').style.display=document.getElementById('rsvpSection').style.display==='none'?'block':'none'">RSVP</button>
             <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display=document.getElementById('signupSection').style.display==='none'?'block':'none'">Present at this Event</button>
+            <button class="btn" onclick="navigator.clipboard.writeText(window.location.href).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Share',1800)}).catch(()=>{})" title="Copy event URL">Share</button>
             <a class="add-to-cal" id="addToCalBtn" style="display:none">📅 Add to Calendar</a>
           </div>
           <div class="event-hero-countdown">
@@ -143,6 +195,13 @@ async function loadEvent() {
           </div>
         </div>
       </div>
+
+      <!-- About This Event -->
+      ${ev.description ? `
+      <div class="event-about-section">
+        <div class="event-about-heading">About This Event</div>
+        <div class="event-about-body">${esc(ev.description)}</div>
+      </div>` : ''}
 
       <!-- RSVP (hidden by default) -->
       <div id="rsvpSection" style="display:none;margin-bottom:24px">
@@ -180,13 +239,26 @@ async function loadEvent() {
       </div>
 
       <div class="event-tab-view active" id="tab-lineup">
-        <div class="speaker-rows" id="speakerRows">
-          ${speakers.length ? speakers.map((sp, i) => renderSpeaker(sp, i+1)).join('') : '<div class="lineup-empty">No speakers signed up yet — be the first!</div>'}
+        <div id="speakerRows">
+          ${speakers.length
+            ? speakers.map((sp, i) => renderSpeaker(sp, i+1)).join('')
+            : `<div class="empty-cta">
+                <div class="empty-cta-icon">🎤</div>
+                <h3>No speakers yet — be the first to present!</h3>
+                <p>Share your project, demo something you built, or talk about what you're learning.</p>
+                <button class="btn btn-primary" onclick="document.getElementById('signupSection').style.display='block';document.getElementById('signupSection').scrollIntoView({behavior:'smooth'})">Sign Up to Present</button>
+               </div>`}
         </div>
       </div>
 
       <div class="event-tab-view" id="tab-bounties">
-        ${bounties.length ? '<div class="bounty-grid">' + bounties.map(b => renderBounty(b)).join('') + '</div>' : '<div class="lineup-empty">No bounties for this event yet.</div>'}
+        ${bounties.length
+          ? '<div class="bounty-grid">' + bounties.map(b => renderBounty(b)).join('') + '</div>'
+          : `<div class="empty-cta">
+              <div class="empty-cta-icon">⚡</div>
+              <h3>No bounties yet</h3>
+              <p>Bounties let organizers reward builders for solving specific challenges. Check back soon.</p>
+             </div>`}
       </div>
     `;
 
@@ -208,39 +280,61 @@ async function loadEvent() {
   }
 }
 
+function speakerInitials(name) {
+  return (name || '?').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+}
+
+function speakerAvatarColor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || '').length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue},55%,38%)`;
+}
+
 function renderSpeaker(sp, rank) {
   const medals = ['🥇','🥈','🥉'];
-  const rankLabel = rank <= 3 ? medals[rank-1] : '#'+rank;
+  const rankLabel = rank <= 3 ? medals[rank-1] : '#' + rank;
+  const initials = speakerInitials(sp.name);
+  const avatarBg = speakerAvatarColor(sp.name);
+  const projectTitle = sp.project || sp.project_title || '';
+  const profileLink = sp.user_id ? `/profile/${esc(sp.user_id)}` : null;
+  const nameEl = profileLink
+    ? `<a href="${profileLink}" class="spk-card-name" style="color:inherit;text-decoration:none" onclick="event.stopPropagation()">${esc(sp.name)}</a>`
+    : `<div class="spk-card-name">${esc(sp.name)}</div>`;
   return `
-    <div class="speaker-row ${rank<=3?'rank-'+rank:''}" ${sp.deck_id ? `onclick="window.location='/deck/${sp.deck_id}'" style="cursor:pointer"` : ''}>
-      <div class="rank-badge rank-${Math.min(rank,4)}">${rankLabel}</div>
-      <div class="speaker-info">
-        <div class="speaker-name">${esc(sp.name)}</div>
-        <div class="speaker-project">${sp.deck_id ? `<a href="/deck/${esc(sp.deck_id)}" class="project-link" onclick="event.stopPropagation()">${esc(sp.project||sp.project_title)} →</a>` : esc(sp.project||sp.project_title)}</div>
-        ${sp.description ? `<div class="speaker-desc">${esc(sp.description)}</div>` : ''}
-        <div class="spk-links">
+    <div class="speaker-card" ${sp.deck_id ? `onclick="window.location='/deck/${sp.deck_id}'" style="cursor:pointer"` : ''}>
+      <div class="spk-avatar" style="background:${avatarBg}">${initials}</div>
+      <div class="spk-card-body">
+        ${nameEl}
+        <div class="spk-card-project">${sp.deck_id ? `<a href="/deck/${esc(sp.deck_id)}" class="spk-card-project" style="color:var(--accent);text-decoration:none" onclick="event.stopPropagation()">${esc(projectTitle)} →</a>` : esc(projectTitle)}</div>
+        ${sp.description ? `<div class="spk-card-desc">${esc(sp.description)}</div>` : ''}
+        <div class="spk-card-meta">
+          <span class="duration-pill">${sp.duration} min</span>
           ${sp.github_url ? `<a href="${esc(sp.github_url)}" target="_blank" class="spk-link" onclick="event.stopPropagation()">⌥ GitHub</a>` : ''}
           ${sp.demo_url ? `<a href="${esc(sp.demo_url)}" target="_blank" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : ''}
           ${sp.deck_id ? `<a href="/deck/${esc(sp.deck_id)}" class="spk-link" onclick="event.stopPropagation()">📽 Deck</a>` : ''}
         </div>
       </div>
-      <div class="duration-badge">${sp.duration} min</div>
-      <button class="vote-btn" onclick="event.stopPropagation();voteSpeaker('${esc(sp.id)}',this)">
-        <span class="arrow">▲</span><span class="vc">${sp.votes||0}</span>
-      </button>
+      <div class="spk-card-right">
+        <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--muted2);text-align:center">${rankLabel}</div>
+        <button class="vote-btn" onclick="event.stopPropagation();voteSpeaker('${esc(sp.id)}',this)">
+          <span class="arrow">▲</span><span class="vc">${sp.votes||0}</span>
+        </button>
+      </div>
     </div>`;
 }
 
 function renderBounty(b) {
   const sc = {open:'open',claimed:'claimed',completed:'completed'}[b.status]||'open';
+  const statusLabel = {open:'Open',claimed:'Claimed',completed:'Completed'}[b.status]||b.status;
   return `
-    <div class="bounty-card">
+    <div class="bounty-card" onclick="window.location='/bounty/${esc(b.id)}'" style="cursor:pointer">
       <div class="bounty-header">
         <div class="bounty-title">${esc(b.title)}</div>
-        <span class="bounty-status ${sc}">${b.status}</span>
+        <span class="bounty-status ${sc}">${statusLabel}</span>
       </div>
       <div class="bounty-sats">⚡ ${(b.sats_amount||0).toLocaleString()} sats</div>
-      <div class="bounty-desc">${esc(b.description)}</div>
+      ${b.description ? `<div class="bounty-desc">${esc(b.description)}</div>` : ''}
     </div>`;
 }
 
