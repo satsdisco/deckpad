@@ -904,8 +904,9 @@ a:hover { color: var(--accent); }
 }
 .event-carousel::-webkit-scrollbar { display: none; }
 .event-carousel .event-card {
-  min-width: calc(40% - 8px); max-width: calc(40% - 8px); flex-shrink: 0;
+  min-width: 320px; max-width: 380px; flex-shrink: 0;
   scroll-snap-align: start;
+  overflow: visible;
 }
 .carousel-nav {
   position: absolute; top: 50%; transform: translateY(-50%);
