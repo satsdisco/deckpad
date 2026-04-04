@@ -439,7 +439,7 @@ async function loadProfile() {
     const uploadableAttr = isOwn ? ' avatar-uploadable" onclick="triggerAvatarUpload()' : '';
     const avatarHtml = `<div class="profile-avatar-wrap${uploadableAttr}">
       ${user.avatar
-        ? `<img id="profileAvatarImg" class="profile-avatar ${avatarRingClass}" src="${esc(user.avatar)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div id="profileAvatarPlaceholder" class="profile-avatar-placeholder ${avatarRingClass}" style="display:none">${esc(avatarInitials)}</div>`
+        ? `<img id="profileAvatarImg" class="profile-avatar ${avatarRingClass}" src="${esc(user.avatar)}" alt=""${isOwn ? '' : ' onclick="openLightbox(this.src)" style="cursor:zoom-in"'} onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div id="profileAvatarPlaceholder" class="profile-avatar-placeholder ${avatarRingClass}" style="display:none">${esc(avatarInitials)}</div>`
         : `<div id="profileAvatarPlaceholder" class="profile-avatar-placeholder ${avatarRingClass}">${esc(avatarInitials)}</div>`}
       ${isOwn ? `<div class="avatar-upload-overlay"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div><input id="avatarFileInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="handleAvatarUpload(this)">` : ''}
     </div>`;
@@ -713,6 +713,16 @@ async function initAuth() {
   } catch {}
 }
 initAuth();
+</script>
+<div class="lightbox-overlay" id="lightbox" onclick="this.classList.remove('open')">
+  <img id="lightboxImg" src="" alt="">
+</div>
+<script>
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('lightbox')?.classList.remove('open'); });
 </script>
 </body>
 </html>
