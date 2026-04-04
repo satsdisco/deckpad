@@ -551,19 +551,25 @@ async function loadEvents() {
       const pastGrid = document.getElementById('pastEventsGrid');
       if (pastSection && pastGrid) {
         pastSection.style.display = 'block';
+        const typeColors = { 'demo-day': 'rgba(124,92,252,0.08)', 'hackathon': 'rgba(57,217,138,0.06)', 'bounty': 'rgba(212,168,67,0.06)' };
+        const typeBorders = { 'demo-day': 'rgba(124,92,252,0.15)', 'hackathon': 'rgba(57,217,138,0.12)', 'bounty': 'rgba(212,168,67,0.12)' };
         pastGrid.innerHTML = pastEvents.map(ev => {
-          const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', {month:'short', day:'numeric', year:'numeric'}) : 'TBD';
+          const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'TBD';
           const evType = ev.event_type || ev.type || 'Event';
           const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆' };
           const icon = typeIcons[evType] || '📅';
-          return `<div class="project-card" onclick="location.href='/event/${ev.id}'" style="cursor:pointer;opacity:0.7">
-            <div class="project-card-body" style="padding:14px 16px">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                <div class="project-name">${icon} ${esc(ev.name)}</div>
-                <span class="card-tag" style="font-size:0.55rem;text-transform:uppercase">Ended</span>
-              </div>
-              <div style="font-size:0.75rem;color:var(--muted2)">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}</div>
+          const bgColor = typeColors[evType] || 'var(--glass)';
+          const borderColor = typeBorders[evType] || 'var(--border)';
+          const desc = (ev.description || '').slice(0, 80);
+          const speakerCount = (ev.speakers || []).length;
+          return `<div onclick="location.href='/event/${ev.id}'" style="cursor:pointer;background:${bgColor};border:1px solid ${borderColor};border-radius:var(--radius-lg);padding:16px 18px;transition:all .15s;opacity:0.85" onmouseenter="this.style.opacity='1';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'" onmouseleave="this.style.opacity='0.85';this.style.transform='none';this.style.boxShadow='none'">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <div style="font-size:0.88rem;font-weight:700;color:var(--text)">${icon} ${esc(ev.name)}</div>
+              <span style="font-size:0.55rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);background:rgba(255,255,255,.04);padding:2px 8px;border-radius:100px;border:1px solid var(--border)">✓ Ended</span>
             </div>
+            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}${speakerCount ? ' · 🎤 ' + speakerCount + ' presenter' + (speakerCount !== 1 ? 's' : '') : ''}</div>
+            ${desc ? `<div style="font-size:0.75rem;color:var(--muted2);line-height:1.5;margin-bottom:8px">${esc(desc)}${ev.description && ev.description.length > 80 ? '…' : ''}</div>` : ''}
+            <div style="font-size:0.72rem;color:var(--accent);font-weight:600">View Recap →</div>
           </div>`;
         }).join('');
       }
