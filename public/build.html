@@ -50,6 +50,7 @@
             <div class="event-carousel" id="eventsGrid"></div>
             <button class="carousel-nav next" onclick="scrollCarousel(1)">›</button>
           </div>
+          <div id="eventCounter" style="text-align:center;font-size:0.72rem;color:var(--muted2);margin-top:6px;font-family:var(--font-mono)"></div>
           <div class="mini-cal" id="miniCal"></div>
         </div>
 
@@ -429,6 +430,8 @@ async function loadEvents() {
       return;
     }
     grid.innerHTML = eventsData.map(ev => renderEventCard(ev)).join('');
+    const counter = document.getElementById('eventCounter');
+    if (counter) counter.textContent = eventsData.length + ' event' + (eventsData.length !== 1 ? 's' : '') + ' — scroll →';
     startCountdowns();
     renderMiniCal();
     eventsData.forEach(ev => loadEventBounties(ev.id));
