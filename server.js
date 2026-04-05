@@ -788,6 +788,8 @@ app.get('/f/:slug', requireAuth, (req, res) => {
   if (!idea) return res.redirect('/foyer');
   res.redirect(301, `/foyer/${idea.id}`);
 });
+app.get('/foyer',     requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'foyer.html')));
+app.get('/foyer/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'foyer-detail.html')));
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
 

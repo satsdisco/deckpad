@@ -13,7 +13,7 @@
   <nav class="nav-tabs">
     <a href="/" class="nav-tab">Build in Public</a>
     <a href="/decks" class="nav-tab">Decks</a>
-    
+    <a href="/foyer" class="nav-tab">The Foyer</a>
   </nav>
   <div class="header-actions" id="authArea">
     
@@ -64,7 +64,15 @@
     </div>
 
     <div class="comments-section" id="comments">
-      <div class="comments-header" id="commentsHeader">Comments</div>
+      <div class="comments-header">
+        <span id="commentsHeader">Comments</span>
+        <div class="comment-filters" id="commentFilters" style="display:none">
+          <button class="comment-filter active" data-sort="top" onclick="sortComments('top',this)">Top</button>
+          <button class="comment-filter" data-sort="newest" onclick="sortComments('newest',this)">Newest</button>
+          <button class="comment-filter" data-sort="oldest" onclick="sortComments('oldest',this)">Oldest</button>
+          <button class="comment-filter" data-sort="threads" onclick="sortComments('threads',this)">Biggest threads</button>
+        </div>
+      </div>
       <div id="commentFormArea"></div>
       <div class="comment-list" id="commentList"></div>
     </div>
@@ -269,30 +277,53 @@
       formArea.innerHTML = `<p class="sign-in-prompt"><a href="/auth/google">Sign in</a> to comment</p>`;
     }
 
-    renderComments(comments);
+    buildThreadData(comments);
+    sortComments('top');
   }
 
-  function renderComments(comments) {
-    const list = document.getElementById('commentList');
-    if (!comments.length) {
-      list.innerHTML = '<p class="sign-in-prompt">No comments yet. Be the first!</p>';
-      return;
-    }
-    // Build threaded structure
+  let _roots = [];
+  let _replies = {};
+  let _currentSort = 'top';
+
+  function buildThreadData(comments) {
     const byId = {};
-    const roots = [];
-    const replies = {};
+    _roots = [];
+    _replies = {};
     for (const c of comments) {
       byId[c.id] = c;
       const effectiveParent = c.parent_id ? (byId[c.parent_id]?.parent_id || c.parent_id) : null;
       if (!effectiveParent) {
-        roots.push(c);
+        _roots.push(c);
       } else {
-        (replies[effectiveParent] = replies[effectiveParent] || []).push(c);
+        (_replies[effectiveParent] = _replies[effectiveParent] || []).push(c);
       }
     }
-    roots.reverse(); // newest first
-    list.innerHTML = roots.map(c => renderThread(c, replies[c.id] || [])).join('');
+    const filters = document.getElementById('commentFilters');
+    if (filters) filters.style.display = _roots.length > 1 ? '' : 'none';
+  }
+
+  function sortComments(mode, btn) {
+    _currentSort = mode;
+    if (btn) {
+      document.querySelectorAll('.comment-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    const sorted = [..._roots];
+    if (mode === 'top') {
+      sorted.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+    } else if (mode === 'newest') {
+      sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } else if (mode === 'oldest') {
+      sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    } else if (mode === 'threads') {
+      sorted.sort((a, b) => (_replies[b.id]?.length || 0) - (_replies[a.id]?.length || 0));
+    }
+    const list = document.getElementById('commentList');
+    if (!sorted.length) {
+      list.innerHTML = '<p class="sign-in-prompt">No comments yet. Be the first!</p>';
+      return;
+    }
+    list.innerHTML = sorted.map(c => renderThread(c, _replies[c.id] || [])).join('');
   }
 
   function renderThread(root, kids) {

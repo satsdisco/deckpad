@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea — LunarPad</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="header">
+  <a href="/" class="logo">Lunar <span class="logo-slash"> \ </span><span class="logo-accent">Pad</span></a>
+  <nav class="nav-tabs">
+    <a href="/" class="nav-tab">Build in Public</a>
+    <a href="/decks" class="nav-tab">Decks</a>
+    <a href="/foyer" class="nav-tab active">The Foyer</a>
+  </nav>
+  <div class="header-actions" id="authArea">
+    <div id="userArea"></div>
+  </div>
+</header>
+
+<main class="foyer-detail-wrap">
+  <div id="ideaContent">
+    <div class="foyer-empty">Loading idea...</div>
+  </div>
+
+  <div class="foyer-detail-section" id="comments" style="display:none">
+    <h3># Comments</h3>
+    <p style="font-size:0.8rem;color:var(--muted)">Comments coming soon.</p>
+  </div>
+</main>
+
+<script>
+const ideaId = window.location.pathname.split('/').pop();
+
+async function loadIdea() {
+  try {
+    const res = await fetch('/api/ideas/' + ideaId);
+    if (!res.ok) { document.getElementById('ideaContent').innerHTML = '<div class="foyer-empty">Idea not found.</div>'; return; }
+    const idea = await res.json();
+    document.title = idea.title + ' — LunarPad';
+    document.getElementById('ideaContent').innerHTML = renderIdea(idea);
+    document.getElementById('comments').style.display = '';
+  } catch { document.getElementById('ideaContent').innerHTML = '<div class="foyer-empty">Could not load idea.</div>'; }
+}
+
+function renderIdea(idea) {
+  const authorAvatar = idea.author_avatar ? `<img src="${esc(idea.author_avatar)}" alt="" onerror="this.style.display='none'">` : '';
+  const authorName = esc(idea.author_name || idea.author_username || 'Anonymous');
+  const membersHtml = idea.members && idea.members.length ? `
+    <div class="foyer-detail-section">
+      <h3># Team (${idea.members.length})</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${idea.members.map(m => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text2);background:var(--glass);border:1px solid var(--border);border-radius:100px;padding:3px 10px 3px 3px">
+          ${m.avatar ? `<img src="${esc(m.avatar)}" style="width:18px;height:18px;border-radius:50%" onerror="this.style.display='none'">` : ''}
+          ${esc(m.name || m.username)}
+        </span>`).join('')}
+      </div>
+    </div>` : '';
+
+  return `
+    <div class="foyer-detail-card">
+      <h1>${esc(idea.title)}</h1>
+      <div class="foyer-detail-author">
+        ${authorAvatar}
+        <span>${authorName}</span>
+        <span style="margin-left:auto">${timeAgo(idea.created_at)}</span>
+      </div>
+      <div class="description">${esc(idea.description || '')}</div>
+      <div class="foyer-detail-stats">
+        <span><span class="stat-value">${idea.votes || 0}</span> votes</span>
+        <span><span class="stat-value">${idea.total_sats_received || 0}</span> sats</span>
+        <span><span class="stat-value">${idea.team_size || 0}</span> builders</span>
+      </div>
+      <div class="foyer-detail-actions">
+        <button class="btn btn-sm" disabled title="Coming soon">Upvote</button>
+        <button class="btn btn-sm" disabled title="Coming soon">Zap</button>
+        <button class="btn btn-sm" disabled title="Coming soon">Join Team</button>
+      </div>
+    </div>
+    ${membersHtml}`;
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr + (dateStr.includes('Z') ? '' : 'Z')).getTime();
+  const diff = Math.floor((now - then) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+  return new Date(then).toLocaleDateString();
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+loadIdea();
+</script>
+<script src="/js/auth.js"></script>
+<script>initAuth();</script>
+</body>
+</html>

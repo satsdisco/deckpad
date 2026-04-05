@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Foyer — LunarPad</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="header">
+  <a href="/" class="logo">Lunar <span class="logo-slash"> \ </span><span class="logo-accent">Pad</span></a>
+  <nav class="nav-tabs">
+    <a href="/" class="nav-tab">Build in Public</a>
+    <a href="/decks" class="nav-tab">Decks</a>
+    <a href="/foyer" class="nav-tab active">The Foyer</a>
+  </nav>
+  <div class="header-actions" id="authArea">
+    <div id="userArea"></div>
+  </div>
+</header>
+
+<main class="container" style="padding-top:24px">
+  <div class="foyer-header">
+    <h1>The Foyer</h1>
+    <p>Share ideas, find collaborators, build together.</p>
+  </div>
+
+  <div class="foyer-filters">
+    <button class="comment-filter active" data-sort="top" onclick="sortIdeas('top',this)">Top</button>
+    <button class="comment-filter" data-sort="newest" onclick="sortIdeas('newest',this)">Newest</button>
+    <button class="comment-filter" data-sort="most_zapped" onclick="sortIdeas('most_zapped',this)">Most Zapped</button>
+    <button class="comment-filter" data-sort="biggest_team" onclick="sortIdeas('biggest_team',this)">Biggest Teams</button>
+  </div>
+
+  <div class="foyer-container" id="bubbleContainer">
+    <div class="foyer-empty">Loading ideas...</div>
+  </div>
+</main>
+
+<div class="modal-overlay" id="ideaModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
+    <div class="modal-title">Post an Idea</div>
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="ideaTitle" placeholder="What should we build?">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="ideaDesc" placeholder="Describe the idea, the problem it solves, or why it matters..." rows="4"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="postIdea()">Post Idea</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _ideas = [];
+let _currentSort = 'top';
+
+async function loadIdeas(sort) {
+  _currentSort = sort || _currentSort;
+  try {
+    const res = await fetch('/api/ideas?sort=' + _currentSort);
+    _ideas = await res.json();
+    renderBubbles();
+  } catch { document.getElementById('bubbleContainer').innerHTML = '<div class="foyer-empty">Could not load ideas.</div>'; }
+}
+
+function renderBubbles() {
+  const container = document.getElementById('bubbleContainer');
+  if (!_ideas.length) {
+    container.innerHTML = '<div class="foyer-empty">No ideas yet. Be the first to post one!</div>';
+    return;
+  }
+  const maxVotes = Math.max(..._ideas.map(i => i.votes || 0), 1);
+  container.innerHTML = _ideas.map(idea => {
+    const votes = idea.votes || 0;
+    const ratio = Math.log(votes + 1) / Math.log(maxVotes + 1);
+    const size = Math.round(90 + ratio * 110);
+    const fontSize = Math.max(0.55, 0.6 + ratio * 0.3);
+    return `<a href="/foyer/${esc(idea.id)}" class="idea-bubble" style="width:${size}px;height:${size}px">
+      <span class="bubble-title" style="font-size:${fontSize}rem">${esc(idea.title)}</span>
+      <span class="bubble-votes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>${votes}</span>
+    </a>`;
+  }).join('');
+}
+
+function sortIdeas(sort, btn) {
+  document.querySelectorAll('.foyer-filters .comment-filter').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadIdeas(sort);
+}
+
+async function postIdea() {
+  const title = document.getElementById('ideaTitle').value.trim();
+  const description = document.getElementById('ideaDesc').value.trim();
+  if (!title) return alert('Title is required');
+  try {
+    const res = await fetch('/api/ideas', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title, description })
+    });
+    if (!res.ok) { const e = await res.json(); return alert(e.error || 'Failed'); }
+    document.getElementById('ideaTitle').value = '';
+    document.getElementById('ideaDesc').value = '';
+    document.getElementById('ideaModal').classList.remove('open');
+    sortIdeas('newest');
+  } catch { alert('Failed to post idea'); }
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+loadIdeas('top');
+</script>
+<script src="/js/auth.js"></script>
+<script>initAuth();</script>
+<button class="fab" title="Post Idea" onclick="document.getElementById('ideaModal').classList.add('open')"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="fab-label">Post Idea</span></button>
+<script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
+</body>
+</html>

@@ -22,6 +22,7 @@
   <nav class="nav-tabs">
     <a href="/" class="nav-tab active">Build in Public</a>
     <a href="/decks" class="nav-tab">Decks</a>
+    <a href="/foyer" class="nav-tab">The Foyer</a>
   </nav>
   <div class="header-actions" id="authArea">
     <div id="userArea"></div>
@@ -247,6 +248,15 @@ async function loadProject() {
         </div>
 
         <div class="comments-section" id="comments" style="border:none;padding:0;margin-top:16px">
+          <div class="comments-header">
+            <span id="commentsHeader2">Comments</span>
+            <div class="comment-filters" id="commentFiltersProj" style="display:none">
+              <button class="comment-filter active" data-sort="top" onclick="sortProjComments('top',this)">Top</button>
+              <button class="comment-filter" data-sort="newest" onclick="sortProjComments('newest',this)">Newest</button>
+              <button class="comment-filter" data-sort="oldest" onclick="sortProjComments('oldest',this)">Oldest</button>
+              <button class="comment-filter" data-sort="threads" onclick="sortProjComments('threads',this)">Biggest threads</button>
+            </div>
+          </div>
           <div id="commentFormArea"></div>
           <div id="commentList"></div>
         </div>
@@ -338,22 +348,52 @@ async function loadComments() {
     const comments = await res.json();
     if (!comments.length) { list.innerHTML = '<p class="sign-in-prompt">No comments yet.</p>'; return; }
 
-    // Build threaded structure
-    const byId = {};
-    const roots = [];
-    const replies = {};
-    for (const c of comments) {
-      byId[c.id] = c;
-      const effectiveParent = c.parent_id ? (byId[c.parent_id]?.parent_id || c.parent_id) : null;
-      if (!effectiveParent) {
-        roots.push(c);
-      } else {
-        (replies[effectiveParent] = replies[effectiveParent] || []).push(c);
-      }
-    }
-    roots.reverse();
-    list.innerHTML = roots.map(c => renderProjThread(c, replies[c.id] || [])).join('');
+    buildProjThreadData(comments);
+    sortProjComments('top');
   } catch { list.innerHTML = '<p class="sign-in-prompt">Could not load comments.</p>'; }
+}
+
+let _projRoots = [];
+let _projReplies = {};
+
+function buildProjThreadData(comments) {
+  const byId = {};
+  _projRoots = [];
+  _projReplies = {};
+  for (const c of comments) {
+    byId[c.id] = c;
+    const effectiveParent = c.parent_id ? (byId[c.parent_id]?.parent_id || c.parent_id) : null;
+    if (!effectiveParent) {
+      _projRoots.push(c);
+    } else {
+      (_projReplies[effectiveParent] = _projReplies[effectiveParent] || []).push(c);
+    }
+  }
+  const filters = document.getElementById('commentFiltersProj');
+  if (filters) filters.style.display = _projRoots.length > 1 ? '' : 'none';
+}
+
+function sortProjComments(mode, btn) {
+  if (btn) {
+    document.querySelectorAll('#commentFiltersProj .comment-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const sorted = [..._projRoots];
+  if (mode === 'top') {
+    sorted.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+  } else if (mode === 'newest') {
+    sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  } else if (mode === 'oldest') {
+    sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  } else if (mode === 'threads') {
+    sorted.sort((a, b) => (_projReplies[b.id]?.length || 0) - (_projReplies[a.id]?.length || 0));
+  }
+  const list = document.getElementById('commentList');
+  if (!sorted.length) {
+    list.innerHTML = '<p class="sign-in-prompt">No comments yet.</p>';
+    return;
+  }
+  list.innerHTML = sorted.map(c => renderProjThread(c, _projReplies[c.id] || [])).join('');
 }
 
 function renderProjThread(root, kids) {
