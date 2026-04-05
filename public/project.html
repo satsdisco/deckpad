@@ -199,6 +199,7 @@ async function loadProject() {
         <div style="flex:1;min-width:0">
           <h1 class="viewer-title" style="margin-bottom:4px">${esc(p.name)}</h1>
           <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px">by <strong style="color:var(--text)">${p.user_id ? `<a href="/profile/${esc(p.user_id)}" class="profile-link">${esc(p.builder)}</a>` : esc(p.builder)}</strong></div>
+          ${p.source_idea_id ? `<div style="font-size:0.75rem;margin-bottom:8px"><a href="/foyer/${esc(p.source_idea_id)}" style="color:var(--gold);text-decoration:none">💡 Born from an idea in The Foyer</a></div>` : ''}
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <span class="card-tag ${p.category ? 'cat-' + p.category : ''}" style="font-size:0.7rem">${esc(p.category || 'project')}</span>
             <span class="card-tag" style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${statusMap[p.status] || p.status}</span>

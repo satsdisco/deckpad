@@ -120,9 +120,11 @@ function renderBubbles() {
   container.innerHTML = finalPositions.map((pos, i) => {
     const item = items[i];
     const voted = _votedIds.has(item.idea.id);
-    return `<a href="/foyer/${esc(item.idea.id)}" class="idea-bubble ${voted ? 'voted' : ''}"
+    const converted = item.idea.converted_to_project_id;
+    return `<a href="/foyer/${esc(item.idea.id)}" class="idea-bubble ${voted ? 'voted' : ''} ${converted ? 'converted' : ''}"
       style="width:${item.size}px;height:${item.size}px;position:absolute;left:${pos.x - pos.r}px;top:${pos.y - pos.r}px"
       id="bubble-${esc(item.idea.id)}">
+      ${converted ? '<span class="bubble-converted">✓</span>' : ''}
       <span class="bubble-title" style="font-size:${item.fontSize}rem">${esc(item.idea.title)}</span>
       <button class="bubble-vote-btn ${voted ? 'voted' : ''}" onclick="event.preventDefault();event.stopPropagation();voteBubble('${esc(item.idea.id)}',this)" title="Upvote">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>

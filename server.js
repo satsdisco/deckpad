@@ -304,6 +304,10 @@ const MIGRATIONS = [
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_ideas_slug ON ideas(slug) WHERE slug IS NOT NULL',
     'CREATE INDEX IF NOT EXISTS idx_idea_members_idea ON idea_members(idea_id)',
   ]},
+  { name: 'v012_idea_conversion', sql: [
+    'ALTER TABLE ideas ADD COLUMN converted_to_project_id TEXT',
+    'ALTER TABLE projects ADD COLUMN source_idea_id TEXT',
+  ]},
 ];
 
 // Run pending migrations
@@ -2275,6 +2279,42 @@ app.post('/api/ideas/:id/comments', requireAuth, (req, res) => {
     if (_idea?.user_id) notify(_idea.user_id, 'comment', req.user.id, authorName, 'idea', req.params.id, _idea.title);
   }
   res.json({ id });
+});
+
+// POST /api/ideas/:id/convert — convert idea to project
+app.post('/api/ideas/:id/convert', requireAuth, (req, res) => {
+  const idea = stmts.getIdeaById.get(req.params.id);
+  if (!idea) return res.status(404).json({ error: 'Idea not found' });
+  if (idea.user_id && req.user?.id !== idea.user_id && !req.user?.is_admin) {
+    return res.status(403).json({ error: 'Only the idea author or admin can convert' });
+  }
+  if (idea.converted_to_project_id) return res.status(409).json({ error: 'Already converted' });
+
+  const projectName = (req.body.name || idea.title || '').trim();
+  if (!projectName) return res.status(400).json({ error: 'Project name required' });
+
+  const projectId = crypto.randomUUID();
+  const builderName = req.user?.name || 'Anonymous';
+  const slug = uniqueSlug('projects', toSlug(projectName));
+
+  db.prepare(`INSERT INTO projects (id, name, builder, description, status, user_id, slug, total_sats_received, source_idea_id)
+    VALUES (?, ?, ?, ?, 'building', ?, ?, ?, ?)`).run(
+    projectId, projectName, builderName, idea.description || '', req.user.id, slug, idea.total_sats_received || 0, idea.id
+  );
+
+  // Update idea with link to project
+  db.prepare('UPDATE ideas SET converted_to_project_id = ? WHERE id = ?').run(projectId, idea.id);
+
+  // Copy team members as bounty_participants (closest existing pattern)
+  const members = db.prepare('SELECT user_id FROM idea_members WHERE idea_id = ?').all(idea.id);
+  for (const m of members) {
+    const user = db.prepare('SELECT name FROM users WHERE id = ?').get(m.user_id);
+    db.prepare('INSERT INTO bounty_participants (id, bounty_id, user_id, user_name) VALUES (?, ?, ?, ?)').run(
+      crypto.randomUUID(), projectId, m.user_id, user?.name || 'Anonymous'
+    );
+  }
+
+  res.json({ project_id: projectId, project_slug: slug });
 });
 
 // ─── Project Deck Versions API ────────────────────────────────────────────────

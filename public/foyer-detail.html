@@ -91,7 +91,11 @@ function renderIdea(idea) {
         </button>
         <button class="btn btn-sm" onclick="showZapPanel()">⚡ Zap</button>
         <button class="btn btn-sm" id="joinBtn" onclick="toggleTeam()">Join Team</button>
+        ${idea.converted_to_project_id
+          ? `<a href="/project/${esc(idea.converted_to_project_id)}" class="btn btn-sm btn-primary">View Project →</a>`
+          : `<button class="btn btn-sm" id="convertBtn" style="display:none" onclick="showConvertModal()">Convert to Project</button>`}
       </div>
+      ${idea.converted_to_project_id ? `<div style="margin-top:10px;font-size:0.8rem;color:var(--accent)">✓ This idea has been converted to a project</div>` : ''}
       <div id="zapPanel" style="display:none;margin-top:12px;padding:16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">
         <div id="zapInput">
           <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:6px">Amount (sats)</label>
@@ -400,9 +404,62 @@ function timeAgo(dateStr) {
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ─── Convert ──────────────────────────────────────────────────────────────────
+function initConvertState() {
+  if (!_ideaData || !_currentUser) return;
+  if (_ideaData.converted_to_project_id) return;
+  if (_currentUser.id === _ideaData.user_id || _currentUser.is_admin) {
+    const btn = document.getElementById('convertBtn');
+    if (btn) btn.style.display = '';
+  }
+}
+
+function showConvertModal() {
+  document.getElementById('convertName').value = _ideaData.title || '';
+  document.getElementById('convertSats').textContent = _ideaData.total_sats_received || 0;
+  document.getElementById('convertTeam').textContent = _ideaData.team_size || 0;
+  document.getElementById('convertModal').classList.add('open');
+}
+
+async function confirmConvert() {
+  const name = document.getElementById('convertName').value.trim();
+  if (!name) return alert('Project name required');
+  try {
+    const res = await fetch('/api/ideas/' + ideaId + '/convert', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    if (!res.ok) { const e = await res.json(); return alert(e.error || 'Conversion failed'); }
+    const data = await res.json();
+    window.location.href = '/project/' + data.project_id;
+  } catch { alert('Conversion failed'); }
+}
+
 loadIdea();
 </script>
+
+<div class="modal-overlay" id="convertModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
+    <div class="modal-title">Convert Idea to Project</div>
+    <p style="font-size:0.8rem;color:var(--text2);margin-bottom:16px">This will create a new project and carry over the sats pool and team members.</p>
+    <div class="form-group">
+      <label>Project Name</label>
+      <input type="text" id="convertName" placeholder="Project name">
+    </div>
+    <div style="display:flex;gap:20px;margin:12px 0;font-size:0.8rem;color:var(--muted)">
+      <span>Sats: <strong id="convertSats" style="color:var(--text)">0</strong></span>
+      <span>Team: <strong id="convertTeam" style="color:var(--text)">0</strong> builders</span>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmConvert()">Convert</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/auth.js"></script>
-<script>initAuth(function() { initTeamState(); });</script>
+<script>initAuth(function() { initTeamState(); initConvertState(); });</script>
+<script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
 </body>
 </html>
