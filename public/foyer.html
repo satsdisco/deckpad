@@ -32,8 +32,18 @@
     <button class="comment-filter" data-sort="biggest_team" onclick="sortIdeas('biggest_team',this)">Biggest Teams</button>
   </div>
 
-  <div class="foyer-container" id="bubbleContainer">
-    <div class="foyer-empty">Loading ideas...</div>
+  <div class="foyer-layout">
+    <div class="foyer-main">
+      <div class="foyer-container" id="bubbleContainer">
+        <div class="foyer-empty">Loading ideas...</div>
+      </div>
+    </div>
+    <aside class="foyer-sidebar">
+      <div class="sidebar-header">Activity</div>
+      <div class="activity-feed" id="activityFeed">
+        <div class="foyer-empty" style="font-size:0.75rem">Loading activity...</div>
+      </div>
+    </aside>
   </div>
 </main>
 
@@ -126,6 +136,7 @@ function renderBubbles() {
       id="bubble-${esc(item.idea.id)}">
       ${converted ? '<span class="bubble-converted">✓</span>' : ''}
       <span class="bubble-title" style="font-size:${item.fontSize}rem">${esc(item.idea.title)}</span>
+      ${item.idea.views_today > 0 ? `<span class="bubble-views">${item.idea.views_today} view${item.idea.views_today === 1 ? '' : 's'} today</span>` : ''}
       <button class="bubble-vote-btn ${voted ? 'voted' : ''}" onclick="event.preventDefault();event.stopPropagation();voteBubble('${esc(item.idea.id)}',this)" title="Upvote">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         <span id="bv-${esc(item.idea.id)}">${item.votes}</span>
@@ -244,7 +255,48 @@ async function postIdea() {
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ─── Activity Feed ────────────────────────────────────────────────────────────
+let _activityInterval = null;
+
+async function loadActivity() {
+  try {
+    const res = await fetch('/api/foyer/activity');
+    const items = await res.json();
+    const feed = document.getElementById('activityFeed');
+    if (!items.length) { feed.innerHTML = '<div class="foyer-empty" style="font-size:0.75rem">No activity yet</div>'; return; }
+    feed.innerHTML = items.map(a => {
+      const icon = { zap: '⚡', join: '👥', new_idea: '💡', conversion: '🚀' }[a.type] || '•';
+      const actor = esc(a.actor_name || 'Someone');
+      const idea = esc(a.idea_title || 'an idea');
+      let text = '';
+      if (a.type === 'zap') text = `<b>${actor}</b> zapped <a href="/foyer/${esc(a.idea_id)}">${idea}</a> ${a.amount_sats} sats`;
+      else if (a.type === 'join') text = `<b>${actor}</b> joined <a href="/foyer/${esc(a.idea_id)}">${idea}</a>`;
+      else if (a.type === 'new_idea') text = `<b>${actor}</b> posted <a href="/foyer/${esc(a.idea_id)}">${idea}</a>`;
+      else if (a.type === 'conversion') text = `<a href="/foyer/${esc(a.idea_id)}">${idea}</a> became a project`;
+      return `<div class="activity-item"><span class="activity-icon">${icon}</span><span class="activity-text">${text}</span><span class="activity-time">${timeAgoShort(a.ts)}</span></div>`;
+    }).join('');
+  } catch {}
+}
+
+function timeAgoShort(dateStr) {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr + (dateStr.includes('Z') ? '' : 'Z')).getTime();
+  const diff = Math.floor((now - then) / 1000);
+  if (diff < 60) return 'now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+  if (diff < 604800) return Math.floor(diff / 86400) + 'd';
+  return new Date(then).toLocaleDateString();
+}
+
 loadIdeas('top');
+loadActivity();
+_activityInterval = setInterval(loadActivity, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearInterval(_activityInterval); }
+  else { loadActivity(); _activityInterval = setInterval(loadActivity, 30000); }
+});
 </script>
 <script src="/js/auth.js"></script>
 <script>initAuth();</script>

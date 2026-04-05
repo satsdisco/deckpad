@@ -308,6 +308,10 @@ const MIGRATIONS = [
     'ALTER TABLE ideas ADD COLUMN converted_to_project_id TEXT',
     'ALTER TABLE projects ADD COLUMN source_idea_id TEXT',
   ]},
+  { name: 'v013_idea_views', sql: [
+    'ALTER TABLE ideas ADD COLUMN views_today INTEGER DEFAULT 0',
+    'ALTER TABLE ideas ADD COLUMN views_date TEXT',
+  ]},
 ];
 
 // Run pending migrations
@@ -2107,6 +2111,48 @@ app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
   res.json({ id });
 });
 
+// ─── Foyer Activity API ───────────────────────────────────────────────────────
+
+// GET /api/foyer/activity — recent high-signal actions in The Foyer
+app.get('/api/foyer/activity', (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM (
+      SELECT 'zap' as type, u.name as actor_name, i.title as idea_title, i.id as idea_id,
+        z.confirmed_at as ts, z.amount_sats
+      FROM zaps z
+      JOIN ideas i ON z.target_id = i.id AND z.target_type = 'idea'
+      LEFT JOIN users u ON z.user_id = u.id
+      WHERE z.status = 'confirmed'
+
+      UNION ALL
+
+      SELECT 'join' as type, u.name as actor_name, i.title as idea_title, i.id as idea_id,
+        im.created_at as ts, NULL as amount_sats
+      FROM idea_members im
+      JOIN ideas i ON im.idea_id = i.id
+      LEFT JOIN users u ON im.user_id = u.id
+
+      UNION ALL
+
+      SELECT 'new_idea' as type, u.name as actor_name, i.title as idea_title, i.id as idea_id,
+        i.created_at as ts, NULL as amount_sats
+      FROM ideas i
+      LEFT JOIN users u ON i.user_id = u.id
+
+      UNION ALL
+
+      SELECT 'conversion' as type, u.name as actor_name, i.title as idea_title, i.id as idea_id,
+        i.created_at as ts, NULL as amount_sats
+      FROM ideas i
+      LEFT JOIN users u ON i.user_id = u.id
+      WHERE i.converted_to_project_id IS NOT NULL
+    )
+    ORDER BY ts DESC
+    LIMIT 15
+  `).all();
+  res.json(rows);
+});
+
 // ─── Ideas API ────────────────────────────────────────────────────────────────
 
 // GET /api/ideas — list ideas with sort/filter
@@ -2160,6 +2206,16 @@ app.get('/api/ideas/:id', (req, res) => {
     WHERE i.id = ?
   `).get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  // Track views
+  const today = new Date().toISOString().slice(0, 10);
+  if (row.views_date === today) {
+    db.prepare('UPDATE ideas SET views_today = views_today + 1 WHERE id = ?').run(req.params.id);
+    row.views_today = (row.views_today || 0) + 1;
+  } else {
+    db.prepare('UPDATE ideas SET views_today = 1, views_date = ? WHERE id = ?').run(today, req.params.id);
+    row.views_today = 1;
+    row.views_date = today;
+  }
   const members = db.prepare(`
     SELECT im.id, im.user_id, im.created_at, u.name, u.username, u.avatar
     FROM idea_members im
