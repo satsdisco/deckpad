@@ -39,8 +39,10 @@ async function loadIdea() {
     if (!res.ok) { document.getElementById('ideaContent').innerHTML = '<div class="foyer-empty">Idea not found.</div>'; return; }
     const idea = await res.json();
     document.title = idea.title + ' — LunarPad';
+    _ideaData = idea;
     document.getElementById('ideaContent').innerHTML = renderIdea(idea);
     document.getElementById('comments').style.display = '';
+    initVoteState();
   } catch { document.getElementById('ideaContent').innerHTML = '<div class="foyer-empty">Could not load idea.</div>'; }
 }
 
@@ -73,12 +75,105 @@ function renderIdea(idea) {
         <span><span class="stat-value">${idea.team_size || 0}</span> builders</span>
       </div>
       <div class="foyer-detail-actions">
-        <button class="btn btn-sm" disabled title="Coming soon">Upvote</button>
-        <button class="btn btn-sm" disabled title="Coming soon">Zap</button>
+        <button class="btn btn-sm vote-btn" id="voteBtn" onclick="toggleVote()">
+          <span class="arrow">▲</span> <span id="voteLabel">Upvote</span> <span id="voteCount">${idea.votes || 0}</span>
+        </button>
+        <button class="btn btn-sm" onclick="showZapPanel()">⚡ Zap</button>
         <button class="btn btn-sm" disabled title="Coming soon">Join Team</button>
+      </div>
+      <div id="zapPanel" style="display:none;margin-top:12px;padding:16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">
+        <div id="zapInput">
+          <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:6px">Amount (sats)</label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="zapAmount" min="1" value="100" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.85rem">
+            <button class="btn btn-primary btn-sm" onclick="submitZap()">Generate Invoice</button>
+          </div>
+        </div>
+        <div id="zapQr" style="display:none;text-align:center;margin-top:12px">
+          <img id="zapQrImg" src="" style="max-width:200px;border-radius:var(--radius)">
+          <p style="font-size:0.7rem;color:var(--muted);margin-top:8px">Scan to pay. Waiting for confirmation...</p>
+        </div>
       </div>
     </div>
     ${membersHtml}`;
+}
+
+let _voted = false;
+let _ideaData = null;
+
+async function initVoteState() {
+  try {
+    const res = await fetch('/api/vote/check?type=idea&ids=' + ideaId);
+    const data = await res.json();
+    if (data[ideaId]?.voted) {
+      _voted = true;
+      const btn = document.getElementById('voteBtn');
+      if (btn) btn.classList.add('voted');
+    }
+  } catch {}
+}
+
+async function toggleVote() {
+  try {
+    const res = await fetch('/api/vote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'idea',id:ideaId}) });
+    const data = await res.json();
+    _voted = data.voted;
+    const btn = document.getElementById('voteBtn');
+    btn.classList.toggle('voted', _voted);
+    document.getElementById('voteCount').textContent = data.votes;
+  } catch {}
+}
+
+function showZapPanel() {
+  const panel = document.getElementById('zapPanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+  document.getElementById('zapInput').style.display = '';
+  document.getElementById('zapQr').style.display = 'none';
+}
+
+let _zapPollInterval = null;
+
+async function submitZap() {
+  const amount = parseInt(document.getElementById('zapAmount').value);
+  if (!amount || amount < 1) return alert('Enter a valid amount');
+  try {
+    const res = await fetch('/api/ideas/' + ideaId + '/zap', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ amount_sats: amount })
+    });
+    if (!res.ok) { const e = await res.json(); return alert(e.error || 'Zap failed'); }
+    const data = await res.json();
+    document.getElementById('zapInput').style.display = 'none';
+    document.getElementById('zapQr').style.display = '';
+    document.getElementById('zapQrImg').src = data.qr_data_url;
+    startZapPoll(data.zap_id);
+  } catch { alert('Zap failed'); }
+}
+
+function startZapPoll(zapId) {
+  if (_zapPollInterval) clearInterval(_zapPollInterval);
+  let attempts = 0;
+  _zapPollInterval = setInterval(async () => {
+    attempts++;
+    if (attempts > 60) { clearInterval(_zapPollInterval); return; }
+    try {
+      const res = await fetch('/api/zaps/verify/' + zapId);
+      const data = await res.json();
+      if (data.settled) {
+        clearInterval(_zapPollInterval);
+        document.getElementById('zapPanel').style.display = 'none';
+        // Refresh idea to get updated sats
+        const iRes = await fetch('/api/ideas/' + ideaId);
+        if (iRes.ok) {
+          const idea = await iRes.json();
+          const statsEl = document.querySelector('.foyer-detail-stats');
+          if (statsEl) {
+            statsEl.children[1].innerHTML = '<span class="stat-value">' + (idea.total_sats_received || 0) + '</span> sats';
+          }
+        }
+      }
+    } catch {}
+  }, 3000);
 }
 
 function timeAgo(dateStr) {

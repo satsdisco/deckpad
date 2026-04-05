@@ -1725,12 +1725,19 @@ app.get('/api/zaps/verify/:zap_id', async (req, res) => {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, deck.uploaded_by);
           notify(deck.uploaded_by, 'zap', zap.user_id, zapperName, 'deck', zap.target_id, deck.title);
         }
-      } else {
+      } else if (zap.target_type === 'project') {
         db.prepare(`UPDATE projects SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
         const project = db.prepare('SELECT user_id, name FROM projects WHERE id = ?').get(zap.target_id);
         if (project?.user_id) {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, project.user_id);
           notify(project.user_id, 'zap', zap.user_id, zapperName, 'project', zap.target_id, project.name);
+        }
+      } else if (zap.target_type === 'idea') {
+        db.prepare(`UPDATE ideas SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
+        const idea = db.prepare('SELECT user_id, title FROM ideas WHERE id = ?').get(zap.target_id);
+        if (idea?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
+          notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
         }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -1777,12 +1784,19 @@ app.post('/api/zaps/confirm/:zap_id', requireAuth, (req, res) => {
       db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, deck.uploaded_by);
       notify(deck.uploaded_by, 'zap', zap.user_id, zapperName, 'deck', zap.target_id, deck.title);
     }
-  } else {
+  } else if (zap.target_type === 'project') {
     db.prepare(`UPDATE projects SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
     const project = db.prepare('SELECT user_id, name FROM projects WHERE id = ?').get(zap.target_id);
     if (project?.user_id) {
       db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, project.user_id);
       notify(project.user_id, 'zap', zap.user_id, zapperName, 'project', zap.target_id, project.name);
+    }
+  } else if (zap.target_type === 'idea') {
+    db.prepare(`UPDATE ideas SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
+    const idea = db.prepare('SELECT user_id, title FROM ideas WHERE id = ?').get(zap.target_id);
+    if (idea?.user_id) {
+      db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
+      notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
     }
   }
   if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -1813,12 +1827,19 @@ app.post('/api/webhook/lnbits', async (req, res) => {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, deck.uploaded_by);
           notify(deck.uploaded_by, 'zap', zap.user_id, zapperName, 'deck', zap.target_id, deck.title);
         }
-      } else {
+      } else if (zap.target_type === 'project') {
         db.prepare(`UPDATE projects SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
         const project = db.prepare('SELECT user_id, name FROM projects WHERE id = ?').get(zap.target_id);
         if (project?.user_id) {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, project.user_id);
           notify(project.user_id, 'zap', zap.user_id, zapperName, 'project', zap.target_id, project.name);
+        }
+      } else if (zap.target_type === 'idea') {
+        db.prepare(`UPDATE ideas SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, zap.target_id);
+        const idea = db.prepare('SELECT user_id, title FROM ideas WHERE id = ?').get(zap.target_id);
+        if (idea?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
+          notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
         }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -2156,6 +2177,44 @@ app.delete('/api/ideas/:id', requireAuth, (req, res) => {
   stmts.deleteVotes.run('idea', req.params.id);
   db.prepare('DELETE FROM ideas WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/ideas/:id/zap — generate invoice to zap this idea
+app.post('/api/ideas/:id/zap', requireAuth, async (req, res) => {
+  const idea = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
+  if (!idea) return res.status(404).json({ error: 'Idea not found' });
+  const amount_sats = parseInt(req.body.amount_sats);
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
+  if (amount_sats > 10_000_000) return res.status(400).json({ error: 'amount_sats exceeds maximum' });
+  let recipientAddress = null;
+  let recipient = 'Unknown';
+  if (idea.user_id) {
+    const author = db.prepare('SELECT name, lightning_address FROM users WHERE id = ?').get(idea.user_id);
+    if (author?.lightning_address) { recipientAddress = author.lightning_address; recipient = author.name || recipient; }
+  }
+  try {
+    const webhookUrl = (process.env.BASE_URL || `http://localhost:${PORT}`) + '/api/webhook/lnbits';
+    const lnbitsInv = await lnbitsCreateInvoice(amount_sats, `Zap: ${idea.title}`, webhookUrl);
+    const zapId = crypto.randomUUID();
+    db.prepare(`INSERT INTO zaps (id, target_type, target_id, user_id, user_name, amount_sats, payment_request, payment_hash, verify_url, status, recipient_address)
+      VALUES (?, 'idea', ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`).run(
+      zapId, idea.id, req.user.id, req.user.name || req.user.email, amount_sats, lnbitsInv.payment_request, lnbitsInv.payment_hash, recipientAddress
+    );
+    const qrData = 'lightning:' + lnbitsInv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({ zap_id: zapId, payment_request: lnbitsInv.payment_request, qr_data_url, recipient });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// GET /api/ideas/:id/zaps — confirmed zaps for this idea
+app.get('/api/ideas/:id/zaps', (req, res) => {
+  const zaps = db.prepare(
+    `SELECT id, user_id, user_name, amount_sats, created_at FROM zaps WHERE target_type = 'idea' AND target_id = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT 20`
+  ).all(req.params.id);
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(amount_sats), 0) as total FROM zaps WHERE target_type = 'idea' AND target_id = ? AND status = 'confirmed'`
+  ).get(req.params.id);
+  res.json({ zaps, total_sats: row?.total || 0 });
 });
 
 // ─── Project Deck Versions API ────────────────────────────────────────────────

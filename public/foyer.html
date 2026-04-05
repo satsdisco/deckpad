@@ -59,12 +59,22 @@
 <script>
 let _ideas = [];
 let _currentSort = 'top';
+let _votedIds = new Set();
 
 async function loadIdeas(sort) {
   _currentSort = sort || _currentSort;
   try {
     const res = await fetch('/api/ideas?sort=' + _currentSort);
     _ideas = await res.json();
+    // Check which ideas the user has voted on
+    if (_ideas.length) {
+      try {
+        const ids = _ideas.map(i => i.id).join(',');
+        const vRes = await fetch('/api/vote/check?type=idea&ids=' + ids);
+        const vData = await vRes.json();
+        _votedIds = new Set(Object.keys(vData).filter(id => vData[id].voted));
+      } catch {}
+    }
     renderBubbles();
   } catch { document.getElementById('bubbleContainer').innerHTML = '<div class="foyer-empty">Could not load ideas.</div>'; }
 }
@@ -81,11 +91,30 @@ function renderBubbles() {
     const ratio = Math.log(votes + 1) / Math.log(maxVotes + 1);
     const size = Math.round(90 + ratio * 110);
     const fontSize = Math.max(0.55, 0.6 + ratio * 0.3);
-    return `<a href="/foyer/${esc(idea.id)}" class="idea-bubble" style="width:${size}px;height:${size}px">
+    const voted = _votedIds.has(idea.id);
+    return `<a href="/foyer/${esc(idea.id)}" class="idea-bubble ${voted ? 'voted' : ''}" style="width:${size}px;height:${size}px" id="bubble-${esc(idea.id)}">
       <span class="bubble-title" style="font-size:${fontSize}rem">${esc(idea.title)}</span>
-      <span class="bubble-votes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>${votes}</span>
+      <button class="bubble-vote-btn ${voted ? 'voted' : ''}" onclick="event.preventDefault();event.stopPropagation();voteBubble('${esc(idea.id)}',this)" title="Upvote">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        <span id="bv-${esc(idea.id)}">${votes}</span>
+      </button>
     </a>`;
   }).join('');
+}
+
+async function voteBubble(id, btn) {
+  try {
+    const res = await fetch('/api/vote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'idea',id}) });
+    const data = await res.json();
+    document.getElementById('bv-' + id).textContent = data.votes;
+    btn.classList.toggle('voted', data.voted);
+    const bubble = document.getElementById('bubble-' + id);
+    if (bubble) bubble.classList.toggle('voted', data.voted);
+    if (data.voted) { _votedIds.add(id); } else { _votedIds.delete(id); }
+    // Update the idea in memory for re-sorting
+    const idea = _ideas.find(i => i.id === id);
+    if (idea) idea.votes = data.votes;
+  } catch {}
 }
 
 function sortIdeas(sort, btn) {
