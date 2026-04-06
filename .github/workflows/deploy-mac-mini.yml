@@ -58,16 +58,19 @@ jobs:
           esac
 
           DOMAIN="gui/$(id -u)"
+          GIT_BIN="/opt/homebrew/bin/git"
+          GIT_DIR="$REPO/.git"
           FETCH_URL="https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
           echo "==> Repo: $REPO"
           echo "==> Branch: $BRANCH"
           echo "==> Fetch URL host: github.com/${GITHUB_REPOSITORY}.git"
-          /opt/homebrew/bin/git -C "$REPO" fetch "$FETCH_URL" "$BRANCH"
-          /opt/homebrew/bin/git -C "$REPO" checkout "$BRANCH"
-          /opt/homebrew/bin/git -C "$REPO" reset --hard FETCH_HEAD
+          cd /tmp
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" fetch "$FETCH_URL" "$BRANCH"
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" checkout "$BRANCH"
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" reset --hard FETCH_HEAD
           launchctl kickstart -k "$DOMAIN/$LABEL"
           sleep 3
-          git -C "$REPO" rev-parse HEAD
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" rev-parse HEAD
           launchctl print "$DOMAIN/$LABEL" | sed -n '1,40p'
           lsof -nP -iTCP:${PORT} -sTCP:LISTEN || true
           curl -I -s "$URL" | sed -n '1,12p'
