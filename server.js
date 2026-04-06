@@ -1578,15 +1578,23 @@ app.post('/api/projects/:id/banner', requireAuth, bannerUpload.single('banner'),
       return res.status(500).json({ error: 'Failed to save banner' });
     }
   }
+  // Auto-generate both banner (wide) and thumbnail (square) from single upload
+  let thumbnailUrl = null;
   if (sharp) {
     try {
       const processed = await sharp(destPath).resize(800, null, { fit: 'inside', withoutEnlargement: true }).toBuffer();
       fs.writeFileSync(destPath, processed);
+      // Generate square thumbnail
+      const thumbFilename = 'proj-thumb-' + req.params.id + ext;
+      const thumbPath = path.join(AVATARS_DIR, thumbFilename);
+      await sharp(destPath).resize(200, 200, { fit: 'cover', position: 'centre' }).toBuffer().then(buf => fs.writeFileSync(thumbPath, buf));
+      thumbnailUrl = '/avatars/' + thumbFilename;
+      db.prepare('UPDATE projects SET thumbnail_url = ? WHERE id = ?').run(thumbnailUrl, req.params.id);
     } catch (_) {}
   }
   const bannerUrl = '/avatars/' + filename;
   db.prepare('UPDATE projects SET banner_url = ? WHERE id = ?').run(bannerUrl, req.params.id);
-  res.json({ ok: true, banner_url: bannerUrl });
+  res.json({ ok: true, banner_url: bannerUrl, thumbnail_url: thumbnailUrl });
 });
 
 // POST /api/projects/:id/thumbnail — upload project thumbnail (max 2MB)
@@ -2660,10 +2668,11 @@ app.get('/api/leaderboard', (req, res) => {
 
   const result = rows.map((u, i) => {
     const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
+    const zaps_sent = db.prepare('SELECT COALESCE(SUM(amount_sats),0) as s FROM zaps WHERE user_id = ? AND status = ?').get(u.user_id, 'confirmed')?.s || 0;
     let badges = [];
     try { badges = JSON.parse(u.badges || '[]'); } catch {}
     const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
-    return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
+    return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), zaps_sent, bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
   });
   res.json(result);
 });

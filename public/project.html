@@ -934,8 +934,9 @@ async function saveCrop() {
       const r = await fetch('/api/projects/' + projectId + '/banner', { method: 'POST', body: fd });
       if (r.ok) {
         const data = await r.json();
+        const t = Date.now();
         const img = document.getElementById('projectImgEl');
-        if (img) img.src = data.banner_url + '?t=' + Date.now();
+        if (img) img.src = (data.thumbnail_url || data.banner_url) + '?t=' + t;
       } else { alert('Upload failed'); }
     } catch { alert('Upload failed'); }
     btn.disabled = false; btn.textContent = 'Save';
