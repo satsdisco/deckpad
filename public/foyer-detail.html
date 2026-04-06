@@ -57,6 +57,8 @@ async function loadIdea() {
     document.getElementById('comments').style.display = '';
     initVoteState();
     initTeamState();
+    initEditState();
+    initConvertState();
     loadIdeaComments();
     loadZapContributors();
   } catch { document.getElementById('ideaContent').innerHTML = '<div class="foyer-empty">Could not load idea.</div>'; }
@@ -80,7 +82,7 @@ function renderIdea(idea) {
     <div class="foyer-detail-card">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <h1 style="margin:0">${esc(idea.title)}</h1>
-        <button class="btn btn-sm" id="editIdeaBtn" style="display:none;flex-shrink:0;font-size:0.7rem" onclick="showEditModal()">✏️ Edit</button>
+        <button class="btn" id="editIdeaBtn" style="display:none;flex-shrink:0;font-size:0.82rem;padding:7px 16px;border-radius:20px" onclick="showEditModal()">✏️ Edit</button>
       </div>
       <div class="foyer-detail-author">
         ${authorAvatar}
@@ -90,9 +92,9 @@ function renderIdea(idea) {
       <div class="description">${esc(idea.description || '')}</div>
       ${idea.looking_for ? `<div class="looking-for-badges" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">${idea.looking_for.split(',').map(r => `<span class="looking-for-badge">${esc(r.trim())}</span>`).join('')}</div>` : ''}
       <div class="foyer-detail-stats">
-        <span><span class="stat-value">${idea.votes || 0}</span> votes</span>
-        <span><span class="stat-value">${idea.total_sats_received || 0}</span> sats</span>
-        <span><span class="stat-value">${idea.team_size || 0}</span> builders</span>
+        <span style="color:var(--gold)">⚡ <strong>${(idea.total_sats_received || 0).toLocaleString()}</strong> sats</span>
+        <span>▲ <strong>${idea.votes || 0}</strong> votes</span>
+        <span>👥 <strong>${idea.team_size || 0}</strong> builders</span>
       </div>
       <div class="foyer-detail-actions">
         <button class="vote-btn vote-pill" id="voteBtn" onclick="toggleVote()" style="font-size:0.85rem;padding:8px 18px">
@@ -557,7 +559,7 @@ loadIdea();
 </div>
 
 <script src="/js/auth.js"></script>
-<script>initAuth(function() { initTeamState(); initConvertState(); initEditState(); });</script>
+<script>initAuth(function() { initTeamState(); initConvertState(); initEditState(); loadIdeaComments(); });</script>
 <script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
 </body>
 </html>
