@@ -1578,27 +1578,19 @@ app.post('/api/projects/:id/banner', requireAuth, bannerUpload.single('banner'),
       return res.status(500).json({ error: 'Failed to save banner' });
     }
   }
-  // Auto-generate both banner (wide) and thumbnail (square) from single upload
-  let thumbnailUrl = null;
   if (sharp) {
     try {
-      const processed = await sharp(destPath).resize(800, null, { fit: 'inside', withoutEnlargement: true }).toBuffer();
+      const processed = await sharp(destPath).resize(800, 450, { fit: 'cover', position: 'centre' }).toBuffer();
       fs.writeFileSync(destPath, processed);
-      // Generate square thumbnail
-      const thumbFilename = 'proj-thumb-' + req.params.id + ext;
-      const thumbPath = path.join(AVATARS_DIR, thumbFilename);
-      await sharp(destPath).resize(200, 200, { fit: 'cover', position: 'centre' }).toBuffer().then(buf => fs.writeFileSync(thumbPath, buf));
-      thumbnailUrl = '/avatars/' + thumbFilename;
-      db.prepare('UPDATE projects SET thumbnail_url = ? WHERE id = ?').run(thumbnailUrl, req.params.id);
     } catch (_) {}
   }
   const bannerUrl = '/avatars/' + filename;
   db.prepare('UPDATE projects SET banner_url = ? WHERE id = ?').run(bannerUrl, req.params.id);
-  res.json({ ok: true, banner_url: bannerUrl, thumbnail_url: thumbnailUrl });
+  res.json({ ok: true, banner_url: bannerUrl });
 });
 
 // POST /api/projects/:id/thumbnail — upload project thumbnail (max 2MB)
-app.post('/api/projects/:id/thumbnail', requireAuth, avatarUpload.single('thumbnail'), (req, res) => {
+app.post('/api/projects/:id/thumbnail', requireAuth, avatarUpload.single('thumbnail'), async (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) { if (req.file) fs.unlinkSync(req.file.path); return res.status(404).json({ error: 'Not found' }); }
   if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
@@ -1615,6 +1607,12 @@ app.post('/api/projects/:id/thumbnail', requireAuth, avatarUpload.single('thumbn
     try { fs.copyFileSync(req.file.path, destPath); fs.unlinkSync(req.file.path); } catch (e) {
       return res.status(500).json({ error: 'Failed to save thumbnail' });
     }
+  }
+  if (sharp) {
+    try {
+      const processed = await sharp(destPath).resize(200, 200, { fit: 'cover', position: 'centre' }).toBuffer();
+      fs.writeFileSync(destPath, processed);
+    } catch (_) {}
   }
   const thumbnailUrl = '/avatars/' + filename;
   db.prepare('UPDATE projects SET thumbnail_url = ? WHERE id = ?').run(thumbnailUrl, req.params.id);
