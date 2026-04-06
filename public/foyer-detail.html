@@ -78,7 +78,10 @@ function renderIdea(idea) {
 
   return `
     <div class="foyer-detail-card">
-      <h1>${esc(idea.title)}</h1>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <h1 style="margin:0">${esc(idea.title)}</h1>
+        <button class="btn btn-sm" id="editIdeaBtn" style="display:none;flex-shrink:0;font-size:0.7rem" onclick="showEditModal()">✏️ Edit</button>
+      </div>
       <div class="foyer-detail-author">
         ${authorAvatar}
         <span>${authorName}</span>
@@ -434,6 +437,42 @@ function timeAgo(dateStr) {
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ─── Convert ──────────────────────────────────────────────────────────────────
+function initEditState() {
+  if (!_ideaData || !_currentUser) return;
+  if (_currentUser.id === _ideaData.user_id || _currentUser.is_admin) {
+    const btn = document.getElementById('editIdeaBtn');
+    if (btn) btn.style.display = '';
+  }
+}
+
+function showEditModal() {
+  if (!_ideaData) return;
+  document.getElementById('editIdeaTitle').value = _ideaData.title || '';
+  document.getElementById('editIdeaDesc').value = _ideaData.description || '';
+  // Set role chips
+  const currentRoles = (_ideaData.looking_for || '').split(',').map(s => s.trim()).filter(Boolean);
+  document.querySelectorAll('#editRoleChips .role-chip').forEach(c => {
+    c.classList.toggle('active', currentRoles.includes(c.dataset.role));
+  });
+  document.getElementById('editIdeaModal').classList.add('open');
+}
+
+async function saveIdeaEdit() {
+  const title = document.getElementById('editIdeaTitle').value.trim();
+  const description = document.getElementById('editIdeaDesc').value.trim();
+  const looking_for = [...document.querySelectorAll('#editRoleChips .role-chip.active')].map(c => c.dataset.role);
+  if (!title) return alert('Title is required');
+  try {
+    const res = await fetch('/api/ideas/' + ideaId, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title, description, looking_for })
+    });
+    if (!res.ok) { const e = await res.json(); return alert(e.error || 'Failed'); }
+    document.getElementById('editIdeaModal').classList.remove('open');
+    loadIdea();
+  } catch { alert('Failed to save'); }
+}
+
 function initConvertState() {
   if (!_ideaData || !_currentUser) return;
   if (_ideaData.converted_to_project_id) return;
@@ -467,6 +506,36 @@ async function confirmConvert() {
 loadIdea();
 </script>
 
+<div class="modal-overlay" id="editIdeaModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
+    <div class="modal-title">Edit Idea</div>
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="editIdeaTitle">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="editIdeaDesc" rows="4"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Looking for (optional)</label>
+      <div class="role-chip-picker" id="editRoleChips">
+        <button type="button" class="role-chip" data-role="Designer" onclick="this.classList.toggle('active')">Designer</button>
+        <button type="button" class="role-chip" data-role="Frontend Dev" onclick="this.classList.toggle('active')">Frontend Dev</button>
+        <button type="button" class="role-chip" data-role="Backend Dev" onclick="this.classList.toggle('active')">Backend Dev</button>
+        <button type="button" class="role-chip" data-role="Lightning Dev" onclick="this.classList.toggle('active')">Lightning Dev</button>
+        <button type="button" class="role-chip" data-role="Marketing" onclick="this.classList.toggle('active')">Marketing</button>
+        <button type="button" class="role-chip" data-role="Tester" onclick="this.classList.toggle('active')">Tester</button>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveIdeaEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="convertModal">
   <div class="modal-content">
     <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
@@ -488,7 +557,7 @@ loadIdea();
 </div>
 
 <script src="/js/auth.js"></script>
-<script>initAuth(function() { initTeamState(); initConvertState(); });</script>
+<script>initAuth(function() { initTeamState(); initConvertState(); initEditState(); });</script>
 <script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
 </body>
 </html>

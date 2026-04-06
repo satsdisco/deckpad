@@ -2268,6 +2268,25 @@ app.get('/api/ideas/:id', (req, res) => {
   res.json({ ...row, members });
 });
 
+// PUT /api/ideas/:id — edit idea (author or admin)
+app.put('/api/ideas/:id', requireAuth, (req, res) => {
+  const idea = stmts.getIdeaById.get(req.params.id);
+  if (!idea) return res.status(404).json({ error: 'Not found' });
+  if (idea.user_id && req.user?.id !== idea.user_id && !req.user?.is_admin) {
+    return res.status(403).json({ error: 'Not your idea' });
+  }
+  const { title, description, looking_for } = req.body;
+  if (title !== undefined && (!title || !title.trim())) return res.status(400).json({ error: 'title required' });
+  const newTitle = title !== undefined ? title.trim() : idea.title;
+  const newDesc = description !== undefined ? (description || null) : idea.description;
+  const newLooking = looking_for !== undefined ? (Array.isArray(looking_for) ? looking_for.join(',') : (looking_for || null)) : idea.looking_for;
+  const newSlug = title !== undefined ? uniqueSlug('ideas', toSlug(newTitle)) : idea.slug;
+  db.prepare('UPDATE ideas SET title = ?, description = ?, looking_for = ?, slug = ? WHERE id = ?').run(
+    newTitle, newDesc, newLooking, newSlug, req.params.id
+  );
+  res.json({ ok: true, slug: newSlug });
+});
+
 // DELETE /api/ideas/:id — delete idea (author or admin)
 app.delete('/api/ideas/:id', requireAuth, (req, res) => {
   const idea = stmts.getIdeaById.get(req.params.id);
@@ -2288,12 +2307,9 @@ app.post('/api/ideas/:id/zap', requireAuth, async (req, res) => {
   const amount_sats = parseInt(req.body.amount_sats);
   if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
   if (amount_sats > 10_000_000) return res.status(400).json({ error: 'amount_sats exceeds maximum' });
-  let recipientAddress = null;
-  let recipient = 'Unknown';
-  if (idea.user_id) {
-    const author = db.prepare('SELECT name, lightning_address FROM users WHERE id = ?').get(idea.user_id);
-    if (author?.lightning_address) { recipientAddress = author.lightning_address; recipient = author.name || recipient; }
-  }
+  // Idea zaps pool for the team, not forwarded to author
+  const recipientAddress = null;
+  const recipient = 'Idea Pool';
   try {
     const webhookUrl = (process.env.BASE_URL || `http://localhost:${PORT}`) + '/api/webhook/lnbits';
     const lnbitsInv = await lnbitsCreateInvoice(amount_sats, `Zap: ${idea.title}`, webhookUrl);
