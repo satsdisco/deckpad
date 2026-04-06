@@ -23,6 +23,7 @@
   <div class="foyer-header">
     <h1>The Foyer</h1>
     <p>Share ideas, find collaborators, build together.</p>
+    <div class="foyer-guidance" id="foyerGuidance">Click a bubble to explore an idea, join a team, or help shape what gets built next.</div>
   </div>
 
   <div class="foyer-filters">
@@ -106,9 +107,15 @@ async function loadIdeas(sort) {
 
 function renderBubbles() {
   const container = document.getElementById('bubbleContainer');
+  const guidance = document.getElementById('foyerGuidance');
   if (!_ideas.length) {
     container.innerHTML = '<div class="foyer-empty">No ideas yet. Be the first to post one!</div>';
+    if (guidance) guidance.innerHTML = 'Click a bubble to explore an idea, join a team, or help shape what gets built next.';
     return;
+  }
+  if (guidance && window.LunarUiRules) {
+    const lowContentMessage = window.LunarUiRules.getFoyerLowContentMessage(_ideas);
+    guidance.innerHTML = lowContentMessage || 'Click a bubble to explore an idea, join a team, or help shape what gets built next.';
   }
   // Size bubbles based on active sort metric
   const sorted = [..._ideas];

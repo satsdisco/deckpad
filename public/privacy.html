@@ -3,11 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>404 — LunarPad</title>
+<title>Privacy — LunarPad</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-
 <header class="header">
   <a href="/" class="logo">Lunar <span class="logo-slash"> \ </span><span class="logo-accent">Pad</span></a>
   <nav class="nav-tabs">
@@ -15,21 +14,14 @@
     <a href="/decks" class="nav-tab">Decks</a>
     <a href="/foyer" class="nav-tab">The Foyer</a>
   </nav>
-  <div class="header-actions" id="authArea">
-    <div id="userArea"></div>
-  </div>
+  <div class="header-actions"></div>
 </header>
-
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:40px 20px;text-align:center">
-  <div style="font-size:4rem;margin-bottom:16px;opacity:0.4;filter:drop-shadow(0 0 20px rgba(124,92,252,0.4))">🌙</div>
-  <h1 style="font-family:var(--font-mono);font-size:1.8rem;font-weight:800;color:var(--text);margin-bottom:8px;letter-spacing:-0.02em">404</h1>
-  <p style="color:var(--muted);font-size:0.9rem;margin-bottom:24px;max-width:400px">This page doesn't exist. Maybe the URL is wrong, or it was removed.</p>
-  <a href="/" class="btn btn-primary" style="padding:10px 28px;font-size:0.9rem">Go to Build in Public →</a>
-</div>
-
+<main class="container" style="padding:32px 2.5rem 56px;max-width:900px">
+  <h1 style="margin-bottom:12px">Privacy</h1>
+  <p style="margin-bottom:16px;color:var(--text2)">LunarPad keeps this simple: account, profile, deck, project, bounty, RSVP, and interaction data are stored so the app can work. We do not treat public profile activity as private.</p>
+  <p style="margin-bottom:16px;color:var(--text2)">If you upload content, submit a project, RSVP, or join a bounty, that data may appear inside the product for collaboration, discovery, and leaderboard features.</p>
+  <p style="color:var(--text2)">This page is a launch-ready placeholder and should be replaced with the full policy before broader public rollout.</p>
+</main>
 <footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
-
-<script src="/js/auth.js"></script>
-<script>initAuth();</script>
 </body>
 </html>

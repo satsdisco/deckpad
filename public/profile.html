@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css'>
 <script src='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js'></script>
+<script src="/js/ui-rules.js"></script>
 <style>
 .cropper-modal { background: rgba(0,0,0,0.7) !important; }
 .cropper-view-box { outline: 2px solid var(--accent) !important; outline-color: rgba(124,92,252,0.75) !important; }
@@ -61,7 +62,7 @@
   </div>
 </div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
 function esc(s) { const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
@@ -334,7 +335,7 @@ async function loadProfile() {
     const memberSince = new Date(user.created_at).toLocaleDateString('en', {month:'long', year:'numeric'});
     const earnedBadges = Array.isArray(user.badges) ? user.badges : [];
     window.__profileEarnedBadges = earnedBadges;
-    window.__profileData = { bio: user.bio || null, website_url: user.website_url || null, github_url: user.github_url || null };
+    window.__profileData = { bio: user.bio || null, website_url: user.website_url || null, github_url: user.github_url || null, banner_preset: user.banner_preset || null };
 
     // ── Stats bar ──
     const statsBar = `
@@ -433,6 +434,7 @@ async function loadProfile() {
 
     // ── Badges ──
     const earnedCount = ALL_BADGES.filter(b => earnedBadges.includes(b.id)).length;
+    const badgeProgressPct = Math.round((earnedCount / ALL_BADGES.length) * 100);
     const badgesHtml = ALL_BADGES.map(b => {
       const earned = earnedBadges.includes(b.id);
       if (earned) {
@@ -545,9 +547,19 @@ async function loadProfile() {
           : '');
 
     // ── Badges tab: own profile only ──
+    const bannerPresetOptions = (window.LunarUiRules ? window.LunarUiRules.getProfileBannerPresets() : []).map(preset => `
+      <button type="button" class="banner-preset-chip${user.banner_preset === preset.id ? ' active' : ''}" data-preset="${preset.id}" onclick="saveBannerPreset('${preset.id}', this)">${preset.label}</button>
+    `).join('');
     const badgesTabHtml = isOwn
       ? `<div class="profile-tab-view" id="ptab-badges">
-          <div class="badges-grid" style="margin-top:8px">${badgesHtml}</div>
+          <div class="badge-progress-card">
+            <div class="badge-progress-copy">
+              <strong>${earnedCount}/${ALL_BADGES.length}</strong> badges unlocked
+              <span>${badgeProgressPct}% complete</span>
+            </div>
+            <div class="badge-progress-bar"><div class="badge-progress-fill" style="width:${badgeProgressPct}%"></div></div>
+          </div>
+          <div class="badges-grid" style="margin-top:12px">${badgesHtml}</div>
         </div>`
       : '';
     const badgesTabBtn = isOwn
@@ -557,6 +569,7 @@ async function loadProfile() {
     content.innerHTML = `
       <div class="profile-banner-wrap">
         <div class="profile-banner" id="profileBanner"></div>
+        ${isOwn ? `<div class="banner-preset-picker" id="bannerPresetPicker">${bannerPresetOptions}</div>` : ''}
         <div class="profile-header">
           <div class="profile-header-top">
             ${avatarHtml}
@@ -595,7 +608,7 @@ async function loadProfile() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <label style="font-size:0.75rem;color:var(--muted)">Hours/week:</label>
-          <input type="number" id="availHours" min="0" max="80" value="${user.available_hours || ''}" placeholder="0" style="width:60px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.8rem">
+          <input type="number" id="availHours" min="0" max="80" value="${window.LunarUiRules ? window.LunarUiRules.getAvailabilityInputValue(user.available_hours) : (user.available_hours ?? '')}" placeholder="Set hours" style="width:84px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.8rem">
           <button class="btn btn-sm" onclick="saveAvailability()">Save</button>
         </div>
       </div>` : (user.skills ? `
@@ -706,13 +719,14 @@ function renderProjectCard(p) {
     ? `<span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--btc-bright);opacity:.85">⚡${Number(p.total_sats_received).toLocaleString()}</span>`
     : '';
   const visualSrc = p.thumbnail_url || p.banner_url || projectVisual(p.name, p.category, 400, 120);
+  const statusTone = window.LunarUiRules ? window.LunarUiRules.getProjectStatusTone(p.status) : 'building';
   return `
-    <div class="project-card" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link'))window.location='/project/${p.id}'" style="cursor:pointer">
+    <div class="project-card project-card-${statusTone}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link'))window.location='/project/${p.id}'" style="cursor:pointer">
       <img class="project-card-visual" src="${visualSrc}" alt="">
       <div class="project-card-body">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
           <div class="project-name">${esc(p.name)}</div>
-          <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
+          <span class="project-status-pill project-status-pill-${statusTone}">${statusLabel}</span>
         </div>
         <div class="project-desc">${esc(p.description)}</div>
         <div class="card-tags" style="margin-bottom:10px">${catTag}${bountyTag}${tags}</div>
@@ -777,30 +791,63 @@ function renderBountyItem(b, isOwn) {
 }
 
 
-loadProfile().then(() => {
-  // Generate profile banner gradient from user name
+function applyProfileBanner(presetId) {
   const banner = document.getElementById('profileBanner');
-  if (banner) {
-    const name = document.title.replace(' — LunarPad', '') || 'User';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    const h = Math.abs(hash);
-    const hue1 = h % 360;
-    const hue2 = (h * 7 + 60) % 360;
-    const hue3 = (h * 13 + 180) % 360;
-    // Sharp gradient with geometric shapes — no blur
-    const shapes = Array.from({length: 8}, (_, i) => {
-      const cx = (h * (i+3) * 17) % 800;
-      const cy = (h * (i+7) * 11) % 140;
-      const r = 40 + ((h * (i+11)) % 100);
-      const opacity = 0.06 + ((h * (i+5)) % 8) / 100;
-      const hue = (hue1 + i * 45) % 360;
-      return `<circle cx='${cx}' cy='${cy}' r='${r}' fill='hsla(${hue},50%,40%,${opacity})'/>`;
-    }).join('');
-    const svgPattern = encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='800' height='140'>${shapes}<text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-family='system-ui' font-size='60' font-weight='900' fill='rgba(255,255,255,0.02)'>${name.charAt(0).toUpperCase()}</text></svg>`);
-    banner.style.background = `url("data:image/svg+xml,${svgPattern}"), linear-gradient(135deg, hsla(${hue1},55%,18%,1) 0%, hsla(${hue2},45%,12%,1) 50%, hsla(${hue3},35%,8%,1) 100%)`;
+  if (!banner) return;
+  const presetStyles = {
+    'lunar-dawn': 'linear-gradient(135deg, rgba(124,92,252,0.95), rgba(85,132,255,0.55), rgba(13,15,26,1))',
+    'saturn-violet': 'linear-gradient(135deg, rgba(61,26,92,1), rgba(124,92,252,0.7), rgba(248,181,0,0.28))',
+    'bitcoin-sunset': 'linear-gradient(135deg, rgba(212,168,67,0.95), rgba(245,123,32,0.6), rgba(34,12,58,1))'
+  };
+  if (presetStyles[presetId]) {
+    banner.style.background = presetStyles[presetId];
     banner.style.backgroundSize = 'cover';
+    return;
   }
+  const name = document.title.replace(' — LunarPad', '') || 'User';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  const h = Math.abs(hash);
+  const hue1 = h % 360;
+  const hue2 = (h * 7 + 60) % 360;
+  const hue3 = (h * 13 + 180) % 360;
+  const shapes = Array.from({length: 8}, (_, i) => {
+    const cx = (h * (i+3) * 17) % 800;
+    const cy = (h * (i+7) * 11) % 140;
+    const r = 40 + ((h * (i+11)) % 100);
+    const opacity = 0.06 + ((h * (i+5)) % 8) / 100;
+    const hue = (hue1 + i * 45) % 360;
+    return `<circle cx='${cx}' cy='${cy}' r='${r}' fill='hsla(${hue},50%,40%,${opacity})'/>`;
+  }).join('');
+  const svgPattern = encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='800' height='140'>${shapes}<text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-family='system-ui' font-size='60' font-weight='900' fill='rgba(255,255,255,0.02)'>${name.charAt(0).toUpperCase()}</text></svg>`);
+  banner.style.background = `url("data:image/svg+xml,${svgPattern}"), linear-gradient(135deg, hsla(${hue1},55%,18%,1) 0%, hsla(${hue2},45%,12%,1) 50%, hsla(${hue3},35%,8%,1) 100%)`;
+  banner.style.backgroundSize = 'cover';
+}
+
+async function saveBannerPreset(presetId, btn) {
+  try {
+    const data = window.__profileData || {};
+    const res = await fetch('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bio: data.bio || null, website_url: data.website_url || null, github_url: data.github_url || null, banner_preset: presetId })
+    });
+    if (!res.ok) throw new Error('Failed');
+    if (window.__profileData) window.__profileData.banner_preset = presetId;
+    document.querySelectorAll('.banner-preset-chip').forEach((chip) => chip.classList.toggle('active', chip.dataset.preset === presetId));
+    applyProfileBanner(presetId);
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = 'Saved';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    }
+  } catch {
+    alert('Failed to save banner preset');
+  }
+}
+
+loadProfile().then(() => {
+  applyProfileBanner(window.__profileData && window.__profileData.banner_preset);
 
   // CountUp animation for stat numbers
   const SATS_TARGET = document.querySelector('.profile-stat-value.gold[data-target]');

@@ -12,6 +12,7 @@ const { DatabaseSync } = require('node:sqlite');
 const puppeteer = require('puppeteer');
 const cookieSession = require('cookie-session');
 const QRCode = require('qrcode');
+const { filterPublicLeaderboardRows } = require('./public/js/ui-rules.js');
 let sharp;
 try { sharp = require('sharp'); } catch { sharp = null; }
 
@@ -325,6 +326,9 @@ const MIGRATIONS = [
   ]},
   { name: 'v017_speaker_user_id', sql: [
     'ALTER TABLE speakers ADD COLUMN user_id TEXT',
+  ]},
+  { name: 'v018_user_banner_preset', sql: [
+    'ALTER TABLE users ADD COLUMN banner_preset TEXT',
   ]},
 ];
 
@@ -731,7 +735,7 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (req.user) {
-    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin, lightning_address: req.user.lightning_address || null, bio: req.user.bio || null, website_url: req.user.website_url || null, github_url: req.user.github_url || null, has_google: !!req.user.google_id, skills: req.user.skills || null, available_hours: req.user.available_hours || null } });
+    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin, lightning_address: req.user.lightning_address || null, bio: req.user.bio || null, website_url: req.user.website_url || null, github_url: req.user.github_url || null, banner_preset: req.user.banner_preset || null, has_google: !!req.user.google_id, skills: req.user.skills || null, available_hours: req.user.available_hours || null } });
   } else {
     res.json({ user: null });
   }
@@ -741,8 +745,9 @@ app.get('/api/me', (req, res) => {
 app.put('/api/me/availability', requireAuth, (req, res) => {
   const { skills, available_hours } = req.body;
   const skillsStr = Array.isArray(skills) ? skills.join(',') : (skills || null);
-  const hours = available_hours ? parseInt(available_hours) : null;
-  db.prepare('UPDATE users SET skills = ?, available_hours = ? WHERE id = ?').run(skillsStr, hours, req.user.id);
+  const hasAvailability = available_hours !== null && available_hours !== undefined && String(available_hours).trim() !== '';
+  const hours = hasAvailability ? parseInt(available_hours, 10) : null;
+  db.prepare('UPDATE users SET skills = ?, available_hours = ? WHERE id = ?').run(skillsStr, Number.isNaN(hours) ? null : hours, req.user.id);
   res.json({ ok: true });
 });
 
@@ -1127,6 +1132,15 @@ app.get('/api/events', requireAuth, (req, res) => {
       WHERE s.event_id = ?
       ORDER BY votes DESC, s.created_at ASC
     `).all(ev.id);
+    ev.rsvps = db.prepare(`
+      SELECT r.id, r.name, r.user_id, u.avatar
+      FROM rsvps r
+      LEFT JOIN users u ON r.user_id = u.id
+      WHERE r.event_id = ?
+      ORDER BY r.created_at ASC
+      LIMIT 5
+    `).all(ev.id);
+    ev.rsvp_count = db.prepare('SELECT COUNT(*) as c FROM rsvps WHERE event_id = ?').get(ev.id)?.c || 0;
   }
   res.json(rows);
 });
@@ -1523,16 +1537,18 @@ app.put('/api/profile/lightning', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// PUT /api/profile — update bio, website_url, github_url
+// PUT /api/profile — update bio, website_url, github_url, banner preset
 app.put('/api/profile', requireAuth, (req, res) => {
-  const { bio, website_url, github_url } = req.body;
+  const { bio, website_url, github_url, banner_preset } = req.body;
   const b = typeof bio === 'string' ? bio.trim().slice(0, 160) : null;
   const w = typeof website_url === 'string' ? website_url.trim().slice(0, 512) : null;
   const g = typeof github_url === 'string' ? github_url.trim().slice(0, 512) : null;
+  const allowedBannerPresets = new Set(['lunar-dawn', 'saturn-violet', 'bitcoin-sunset']);
+  const bannerPreset = allowedBannerPresets.has(String(banner_preset || '').trim()) ? String(banner_preset).trim() : null;
   if (w && !isValidUrl(w)) return res.status(400).json({ error: 'website_url must be a valid http/https URL' });
   if (g && !isValidUrl(g)) return res.status(400).json({ error: 'github_url must be a valid http/https URL' });
-  db.prepare('UPDATE users SET bio = ?, website_url = ?, github_url = ? WHERE id = ?').run(b || null, w || null, g || null, req.user.id);
-  res.json({ ok: true });
+  db.prepare('UPDATE users SET bio = ?, website_url = ?, github_url = ?, banner_preset = ? WHERE id = ?').run(b || null, w || null, g || null, bannerPreset, req.user.id);
+  res.json({ ok: true, banner_preset: bannerPreset });
 });
 
 // POST /api/profile/avatar — upload profile photo
@@ -2617,6 +2633,7 @@ app.patch('/api/projects/:id/decks/:version_id/set-current', requireAuth, (req, 
 
 app.get('/api/leaderboard', (req, res) => {
   const sort = req.query.sort || 'earners';
+  const leaderboardQueryLimit = 40;
   let rows;
   if (sort === 'zappers') {
     rows = db.prepare(`
@@ -2627,7 +2644,7 @@ app.get('/api/leaderboard', (req, res) => {
         (SELECT COALESCE(SUM(z.amount_sats),0) FROM zaps z WHERE z.user_id=u.id AND z.status='confirmed') +
         (SELECT COALESCE(SUM(bp.amount_sats),0) FROM bounty_payments bp WHERE bp.user_id=u.id AND bp.payment_type='fund' AND bp.status='confirmed') as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else if (sort === 'projects') {
     rows = db.prepare(`
@@ -2637,7 +2654,7 @@ app.get('/api/leaderboard', (req, res) => {
         COALESCE(u.total_sats_received, 0) as zaps_received,
         (SELECT COUNT(*) FROM projects p WHERE p.user_id=u.id) as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else if (sort === 'active') {
     rows = db.prepare(`
@@ -2650,7 +2667,7 @@ app.get('/api/leaderboard', (req, res) => {
         (SELECT COUNT(*) FROM zaps z WHERE z.user_id=u.id AND z.status='confirmed') +
         (SELECT COUNT(*) FROM bounty_payments bpay WHERE bpay.user_id=u.id AND bpay.status='confirmed') as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else {
     rows = db.prepare(`
@@ -2660,24 +2677,26 @@ app.get('/api/leaderboard', (req, res) => {
         COALESCE(u.total_sats_received, 0) as zaps_received,
         (COALESCE(SUM(CASE WHEN b.paid_out = 1 THEN b.sats_amount ELSE 0 END), 0) + COALESCE(u.total_sats_received, 0)) as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC, bounties_won DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC, bounties_won DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   }
 
-  const result = rows.map((u, i) => {
-    const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
-    const zaps_sent = db.prepare('SELECT COALESCE(SUM(amount_sats),0) as s FROM zaps WHERE user_id = ? AND status = ?').get(u.user_id, 'confirmed')?.s || 0;
-    let badges = [];
-    try { badges = JSON.parse(u.badges || '[]'); } catch {}
-    const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
-    return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), zaps_sent, bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
-  });
+  const result = filterPublicLeaderboardRows(rows)
+    .slice(0, 20)
+    .map((u, i) => {
+      const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
+      const zaps_sent = db.prepare('SELECT COALESCE(SUM(amount_sats),0) as s FROM zaps WHERE user_id = ? AND status = ?').get(u.user_id, 'confirmed')?.s || 0;
+      let badges = [];
+      try { badges = JSON.parse(u.badges || '[]'); } catch {}
+      const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
+      return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), zaps_sent, bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
+    });
   res.json(result);
 });
 
 app.get('/api/users/:id', (req, res) => {
   cachedBadgeCheck(req.params.id);
-  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at, lightning_address, badges, bio, website_url, github_url FROM users WHERE id = ?').get(req.params.id);
+  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at, lightning_address, badges, bio, website_url, github_url, banner_preset FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const deckCount = db.prepare('SELECT COUNT(*) as c FROM decks WHERE uploaded_by = ?').get(req.params.id).c;
   const projectCount = db.prepare("SELECT COUNT(*) as c FROM projects WHERE user_id = ? OR builder = ?").get(req.params.id, user.name).c;

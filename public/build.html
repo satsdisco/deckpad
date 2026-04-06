@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css'>
 <script src='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js'></script>
+<script src="/js/ui-rules.js"></script>
 <style>
 .proj-banner-edit-btn {
   position: absolute; top: 6px; right: 6px;
@@ -86,6 +87,12 @@
 .event-hero-title { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 800; color: var(--text); margin-bottom: 8px; margin-top: 0; letter-spacing: -0.02em; }
 .event-hero-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
 .event-hero-desc { font-size: 0.85rem; color: var(--text2); line-height: 1.6; margin-bottom: 16px; max-width: 560px; }
+.hero-attendees { display:inline-flex; align-items:center; gap:10px; margin:0 0 14px; }
+.hero-attendee-stack { display:flex; align-items:center; }
+.hero-attendee-avatar { width:28px; height:28px; border-radius:50%; border:2px solid var(--bg); background:var(--glass2); color:var(--text); display:inline-flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:700; margin-left:-8px; overflow:hidden; }
+.hero-attendee-avatar:first-child { margin-left:0; }
+.hero-attendee-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+.hero-attendee-count { font-size:0.78rem; color:var(--muted); }
 .event-hero-countdown { display: flex; gap: 10px; margin-bottom: 20px; }
 .event-hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -195,6 +202,7 @@
           <div id="pastEventsSection" style="display:none;margin-top:24px">
             <div class="section-header" style="margin-bottom:12px">
               <span class="section-title" style="font-size:0.75rem;color:var(--muted2)">Past Events</span>
+              <button id="pastEventsToggle" class="btn btn-sm" style="display:none" onclick="togglePastEvents()">View all past events</button>
             </div>
             <div id="pastEventsGrid" class="project-grid"></div>
           </div>
@@ -473,7 +481,7 @@
 
 <div id="projZapOverlay" class="zap-overlay">⚡</div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
 function esc(s) {
@@ -511,6 +519,8 @@ let eventsData = [];
 let speakersData = [];
 let nextDemoDay = null;
 let heroEventData = null;
+let heroRsvpState = { userRsvp: false, loading: false };
+let showAllPastEvents = false;
 let countdownTimers = {};
 
 // ─── Sidebar Navigation ───────────────────────────────────────────────────
@@ -588,6 +598,85 @@ async function loadBounties() {
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────
+function shouldShowEventRecap(ev) {
+  return !!(window.LunarUiRules && window.LunarUiRules.shouldShowEventRecap(ev));
+}
+
+function getLeaderboardWonDisplay(count) {
+  return window.LunarUiRules ? window.LunarUiRules.getLeaderboardWonDisplay(count) : `${count || 0} won`;
+}
+
+function getProjectStatusTone(status) {
+  return window.LunarUiRules ? window.LunarUiRules.getProjectStatusTone(status) : 'building';
+}
+
+function renderHeroAttendeeStack(ev) {
+  const attendees = Array.isArray(ev && ev.rsvps) ? ev.rsvps : [];
+  const totalCount = Number(ev && ev.rsvp_count || attendees.length || 0);
+  if (!totalCount) return '';
+  const avatarStack = attendees.slice(0, 4).map((attendee, index) => {
+    if (attendee.avatar) {
+      return `<span class="hero-attendee-avatar" style="z-index:${10 - index}"><img src="${esc(attendee.avatar)}" alt="" onerror="this.parentNode.textContent='${esc(((attendee.name || '?')[0] || '?').toUpperCase())}'"></span>`;
+    }
+    return `<span class="hero-attendee-avatar hero-attendee-avatar-fallback" style="z-index:${10 - index}">${esc(((attendee.name || '?')[0] || '?').toUpperCase())}</span>`;
+  }).join('');
+  return `<div class="hero-attendees"><div class="hero-attendee-stack">${avatarStack}</div><span class="hero-attendee-count">${totalCount} attending</span></div>`;
+}
+
+function getVisiblePastEvents(pastEvents) {
+  const list = Array.isArray(pastEvents) ? pastEvents : [];
+  const initialCount = window.LunarUiRules ? window.LunarUiRules.getInitialPastEventsVisibleCount() : 3;
+  return showAllPastEvents ? list : list.slice(0, initialCount);
+}
+
+function updatePastEventsToggle(pastEvents) {
+  const toggle = document.getElementById('pastEventsToggle');
+  if (!toggle) return;
+  const shouldShow = window.LunarUiRules && window.LunarUiRules.shouldShowPastEventsToggle(pastEvents);
+  toggle.style.display = shouldShow ? '' : 'none';
+  toggle.textContent = showAllPastEvents ? 'Show fewer past events' : 'View all past events';
+}
+
+function togglePastEvents() {
+  showAllPastEvents = !showAllPastEvents;
+  loadEvents();
+}
+
+async function syncHeroRsvpState() {
+  if (!heroEventData || !heroEventData.id) {
+    heroRsvpState = { userRsvp: false, loading: false };
+    return;
+  }
+  try {
+    const res = await fetch('/api/events/' + heroEventData.id + '/rsvps');
+    if (!res.ok) throw new Error('failed');
+    const data = await res.json();
+    heroRsvpState = { userRsvp: !!data.user_rsvp, loading: false };
+  } catch {
+    heroRsvpState = { userRsvp: false, loading: false };
+  }
+}
+
+async function toggleHeroRsvp() {
+  if (!heroEventData || !heroEventData.id || heroRsvpState.loading) return;
+  heroRsvpState = { ...heroRsvpState, loading: true };
+  renderHeroBanner(heroEventData);
+  try {
+    const method = heroRsvpState.userRsvp ? 'DELETE' : 'POST';
+    const res = await fetch('/api/events/' + heroEventData.id + '/rsvp', { method });
+    if (!res.ok && !(method === 'POST' && res.status === 409)) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'RSVP failed');
+    }
+    await syncHeroRsvpState();
+    renderHeroBanner(heroEventData);
+  } catch (err) {
+    heroRsvpState = { ...heroRsvpState, loading: false };
+    renderHeroBanner(heroEventData);
+    alert(err.message || 'RSVP failed');
+  }
+}
+
 async function loadEvents() {
   const grid = document.getElementById('eventsGrid');
   try {
@@ -598,6 +687,7 @@ async function loadEvents() {
     const _now = new Date();
     const _upcoming = eventsData.filter(ev => ev.date && new Date(ev.date) >= _now).sort((a, b) => new Date(a.date) - new Date(b.date));
     heroEventData = _upcoming[0] || null;
+    await syncHeroRsvpState();
     renderHeroBanner(heroEventData);
 
     // Split into upcoming and past events
@@ -629,9 +719,10 @@ async function loadEvents() {
       const pastGrid = document.getElementById('pastEventsGrid');
       if (pastSection && pastGrid) {
         pastSection.style.display = 'block';
+        updatePastEventsToggle(pastEvents);
         const typeColors = { 'demo-day': 'rgba(124,92,252,0.08)', 'hackathon': 'rgba(57,217,138,0.06)', 'bounty': 'rgba(212,168,67,0.06)' };
         const typeBorders = { 'demo-day': 'rgba(124,92,252,0.15)', 'hackathon': 'rgba(57,217,138,0.12)', 'bounty': 'rgba(212,168,67,0.12)' };
-        pastGrid.innerHTML = pastEvents.map(ev => {
+        pastGrid.innerHTML = getVisiblePastEvents(pastEvents).map(ev => {
           const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'TBD';
           const evType = ev.event_type || ev.type || 'Event';
           const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆' };
@@ -640,6 +731,7 @@ async function loadEvents() {
           const borderColor = typeBorders[evType] || 'var(--border)';
           const desc = (ev.description || '').slice(0, 80);
           const speakerCount = (ev.speakers || []).length;
+          const recapLabel = shouldShowEventRecap(ev) ? 'View Recap →' : 'View Event →';
           return `<div onclick="location.href='/event/${ev.id}'" style="cursor:pointer;background:${bgColor};border:1px solid ${borderColor};border-radius:var(--radius-lg);padding:16px 18px;transition:all .15s;opacity:0.85" onmouseenter="this.style.opacity='1';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'" onmouseleave="this.style.opacity='0.85';this.style.transform='none';this.style.boxShadow='none'">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
               <div style="font-size:0.88rem;font-weight:700;color:var(--text)">${icon} ${esc(ev.name)}</div>
@@ -647,7 +739,7 @@ async function loadEvents() {
             </div>
             <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}${speakerCount ? ' · 🎤 ' + speakerCount + ' presenter' + (speakerCount !== 1 ? 's' : '') : ''}</div>
             ${desc ? `<div style="font-size:0.75rem;color:var(--muted2);line-height:1.5;margin-bottom:8px">${esc(desc)}${ev.description && ev.description.length > 80 ? '…' : ''}</div>` : ''}
-            <div style="font-size:0.72rem;color:var(--accent);font-weight:600">View Recap →</div>
+            <div style="font-size:0.72rem;color:var(--accent);font-weight:600">${recapLabel}</div>
           </div>`;
         }).join('');
       }
@@ -702,6 +794,11 @@ function renderHeroBanner(ev) {
   const calDay = evDate ? evDate.getDate() : '?';
   const calMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   const calWeekday = evDate ? evDate.toLocaleDateString('en', { weekday: 'short' }) : '';
+  const heroRsvpLabel = heroRsvpState.loading
+    ? 'Saving…'
+    : (heroRsvpState.userRsvp ? '✓ Going' : '👥 RSVP');
+  const heroRsvpClass = heroRsvpState.userRsvp ? 'btn btn-primary' : 'btn';
+  const heroRsvpDisabled = heroRsvpState.loading ? 'disabled' : '';
   hero.innerHTML = `
     <div class="event-hero-banner ${typeClass}" style="display:flex;align-items:stretch;gap:24px">
       <div style="flex:1;min-width:0">
@@ -710,6 +807,7 @@ function renderHeroBanner(ev) {
         <h2 class="event-hero-title">${esc(ev.name)}</h2>
         ${ev.location ? `<div class="event-hero-meta">📍 ${esc(ev.location)}</div>` : ''}
         ${desc ? `<p class="event-hero-desc">${esc(desc)}</p>` : ''}
+        ${renderHeroAttendeeStack(ev)}
         <div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Event starts in</div>
         <div class="event-hero-countdown">
           <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-d">--</div><div class="countdown-chip-label">Days</div></div>
@@ -719,7 +817,7 @@ function renderHeroBanner(ev) {
         </div>
         <div class="event-hero-cta">
           <a href="/event/${esc(ev.id)}" class="btn btn-primary" style="padding:10px 28px;font-size:0.9rem">View Event →</a>
-          <a href="/event/${esc(ev.id)}" class="btn" style="padding:10px 28px;font-size:0.9rem;border-color:var(--border2)">RSVP</a>
+          <button type="button" onclick="toggleHeroRsvp()" ${heroRsvpDisabled} class="${heroRsvpClass}" style="padding:10px 28px;font-size:0.9rem;border-color:var(--border2)">${heroRsvpLabel}</button>
         </div>
       </div>
       <div class="hero-cal-tile" style="border-color:${heroColor}">
@@ -744,7 +842,7 @@ function renderEventCard(ev) {
   const cardDay = evDate ? evDate.getDate() : '?';
   const cardMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   return `
-    <div class="event-card" onclick="window.location='/event/${ev.id}'" style="cursor:pointer;position:relative">
+    <a href="/event/${esc(ev.id)}" class="event-card" style="cursor:pointer;position:relative">
       <div style="height:6px;background:${color};border-radius:var(--radius-lg) var(--radius-lg) 0 0;margin:-20px -20px 16px -20px"></div>
       <div class="card-cal-badge" style="border-color:${color}">
         <div class="card-cal-month" style="color:${color}">${cardMonth}</div>
@@ -768,7 +866,7 @@ function renderEventCard(ev) {
           <div class="countdown-chip"><div class="countdown-chip-val" id="cd-s-${esc(ev.id)}">--</div><div class="countdown-chip-label">Sec</div></div>
         </div>
       </div>
-    </div>`;
+    </a>`;
 }
 
 function toggleRsvp(id) {
@@ -1129,18 +1227,19 @@ function renderProjectCards(projects) {
       ? `<span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--btc-bright);opacity:.85">⚡${Number(p.total_sats_received).toLocaleString()}</span>`
       : '';
     const visualSrc = p.banner_url || p.thumbnail_url || projectVisual(p.name, p.category, 400, 120);
+    const statusTone = getProjectStatusTone(p.status);
     const isOwner = _currentUser && (p.user_id === _currentUser.id || _currentUser.is_admin);
     const editBannerBtn = isOwner ? `<button class="proj-banner-edit-btn" onclick="event.stopPropagation(); triggerBannerUpload('${esc(p.id)}')" title="${p.banner_url ? 'Change banner' : 'Add banner'}">📷</button>` : '';
     return `
-      <div class="project-card" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
+      <div class="project-card project-card-${statusTone}" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
         <div style="position:relative">
           <img class="project-card-visual" src="${visualSrc}" alt="">
           ${editBannerBtn}
         </div>
         <div class="project-card-body">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
             <div class="project-name">${esc(p.name)}</div>
-            <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
+            <span class="project-status-pill project-status-pill-${statusTone}">${statusLabel}</span>
           </div>
           <div class="project-builder">by ${p.user_id ? `<a href="/profile/${esc(p.user_id)}" class="profile-link" onclick="event.stopPropagation()">${esc(p.builder)}</a>` : esc(p.builder)}</div>
           <div class="project-desc">${esc(p.description)}</div>
@@ -1635,7 +1734,7 @@ async function loadLeaderboard(sort) {
           <div class="lb-stat lb-sats">${primaryStat(u)}</div>
           ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${Number(u.zaps_sent || 0).toLocaleString()}</div>` : ''}
           ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${u.projects_count}</div>` : ''}
-          <div class="lb-stat lb-meta">🏆 ${u.bounties_won} won</div>
+          <div class="lb-stat lb-meta">🏆 ${getLeaderboardWonDisplay(u.bounties_won)}</div>
         </div>`;
     }).join('') + `</div>`;
   } catch {

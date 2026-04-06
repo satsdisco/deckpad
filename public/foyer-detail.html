@@ -104,7 +104,7 @@ function renderIdea(idea) {
         <button class="btn" id="joinBtn" onclick="toggleTeam()" style="font-size:0.82rem;padding:7px 16px;border-radius:20px">👥 Join Team</button>
         ${idea.converted_to_project_id
           ? `<a href="/project/${esc(idea.converted_to_project_id)}" class="btn btn-primary" style="font-size:0.82rem;padding:7px 16px;border-radius:20px">View Project →</a>`
-          : `<button class="btn" id="convertBtn" style="display:none;font-size:0.82rem;padding:7px 16px;border-radius:20px" onclick="showConvertModal()">🚀 Convert to Project</button>`}
+          : `<button class="btn btn-primary" id="convertBtn" style="display:none;font-size:0.82rem;padding:9px 18px;border-radius:20px;box-shadow:0 0 24px rgba(124,92,252,0.24)" onclick="showConvertModal()">🚀 Convert to Project</button>`}
       </div>
       ${idea.converted_to_project_id ? `<div style="margin-top:10px;font-size:0.8rem;color:var(--accent)">✓ This idea has been converted to a project</div>` : ''}
       <div id="zapPanel" style="display:none;margin-top:12px;padding:16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius)">
