@@ -60,6 +60,29 @@
     return numeric > 0 ? `${numeric} won` : '—';
   }
 
+  function getLeaderboardCountDisplay(count, label) {
+    const numeric = Number(count || 0);
+    return numeric > 0 ? `${numeric.toLocaleString()}${label ? ` ${label}` : ''}` : '—';
+  }
+
+  function getDecksEmptyStateCopy(search) {
+    const query = String(search || '').trim();
+    if (query) {
+      return {
+        title: 'No decks match your search',
+        body: `Try a different keyword or clear “${query}”.`,
+        ctaLabel: 'Clear Search',
+        ctaAction: 'clearSearch()',
+      };
+    }
+    return {
+      title: 'No presentations yet',
+      body: 'Be the first to upload an HTML presentation',
+      ctaLabel: 'Upload Your Deck',
+      ctaAction: "document.getElementById('uploadModal').classList.add('open')",
+    };
+  }
+
   function getProjectStatusTone(status) {
     return String(status || '').toLowerCase() === 'shipped' ? 'shipped' : 'building';
   }
@@ -76,8 +99,10 @@
     filterPublicLeaderboardRows,
     getAvailabilityInputValue,
     getAvailabilityPlaceholder,
+    getDecksEmptyStateCopy,
     getFoyerLowContentMessage,
     getInitialPastEventsVisibleCount,
+    getLeaderboardCountDisplay,
     getLeaderboardWonDisplay,
     getProfileBannerPresets,
     getProjectStatusTone,

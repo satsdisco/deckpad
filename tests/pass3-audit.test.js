@@ -16,6 +16,18 @@ test('ui rules expose pass-3 helpers', () => {
 test('leaderboard hides zero wins behind a softer dash state', () => {
   assert.equal(uiRules.getLeaderboardWonDisplay(0), '—');
   assert.equal(uiRules.getLeaderboardWonDisplay(3), '3 won');
+  assert.equal(uiRules.getLeaderboardCountDisplay(0), '—');
+  assert.equal(uiRules.getLeaderboardCountDisplay(2), '2');
+});
+
+test('decks search empty state distinguishes no matches from no content', () => {
+  assert.deepEqual(uiRules.getDecksEmptyStateCopy('nostr'), {
+    title: 'No decks match your search',
+    body: 'Try a different keyword or clear “nostr”.',
+    ctaLabel: 'Clear Search',
+    ctaAction: 'clearSearch()',
+  });
+  assert.equal(uiRules.getDecksEmptyStateCopy('').title, 'No presentations yet');
 });
 
 test('project status tone maps building and shipped states distinctly', () => {
@@ -54,10 +66,12 @@ test('profile page exposes banner preset controls and badge progress', () => {
   assert.match(html, /badge-progress-bar/);
 });
 
-test('decks search includes an explicit search affordance', () => {
+test('decks search includes an explicit search affordance and no-match state', () => {
   const html = read('public', 'index.html');
   assert.match(html, /search-box-icon/);
   assert.match(html, /Search decks and presentations/);
+  assert.match(html, /clearSearch\(\)/);
+  assert.equal(uiRules.getDecksEmptyStateCopy('bitcoin').title, 'No decks match your search');
 });
 
 test('footer is expanded beyond the minimal launch line', () => {

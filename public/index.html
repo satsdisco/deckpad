@@ -100,15 +100,36 @@
     }
   }
 
+  function getDecksEmptyStateCopy() {
+    if (window.LunarUiRules?.getDecksEmptyStateCopy) {
+      return window.LunarUiRules.getDecksEmptyStateCopy(currentSearch);
+    }
+    return {
+      title: 'No presentations yet',
+      body: 'Be the first to upload an HTML presentation',
+      ctaLabel: 'Upload Your Deck',
+      ctaAction: "document.getElementById('uploadModal').classList.add('open')",
+    };
+  }
+
+  function clearSearch() {
+    currentSearch = '';
+    currentPage = 1;
+    const input = document.getElementById('search');
+    if (input) input.value = '';
+    loadDecks();
+  }
+
   function renderGallery(decks) {
     const el = document.getElementById('gallery');
     if (!decks.length) {
+      const empty = getDecksEmptyStateCopy();
       el.innerHTML = `
         <div class="empty-state">
           <div class="icon">🎭</div>
-          <h3>No presentations yet</h3>
-          <p>Be the first to upload an HTML presentation</p>
-          <button class="btn btn-primary" onclick="document.getElementById('uploadModal').classList.add('open')">Upload Your Deck</button>
+          <h3>${esc(empty.title)}</h3>
+          <p>${esc(empty.body)}</p>
+          <button class="btn btn-primary" onclick="${empty.ctaAction}">${esc(empty.ctaLabel)}</button>
         </div>`;
       return;
     }

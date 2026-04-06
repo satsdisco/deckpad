@@ -606,6 +606,10 @@ function getLeaderboardWonDisplay(count) {
   return window.LunarUiRules ? window.LunarUiRules.getLeaderboardWonDisplay(count) : `${count || 0} won`;
 }
 
+function getLeaderboardCountDisplay(count, label = '') {
+  return window.LunarUiRules ? window.LunarUiRules.getLeaderboardCountDisplay(count, label) : `${count || 0}${label ? ` ${label}` : ''}`;
+}
+
 function getProjectStatusTone(status) {
   return window.LunarUiRules ? window.LunarUiRules.getProjectStatusTone(status) : 'building';
 }
@@ -1732,8 +1736,8 @@ async function loadLeaderboard(sort) {
           </div>
           <div class="lb-bar-wrap"><div class="lb-bar-fill" style="width:${barPct}%"></div></div>
           <div class="lb-stat lb-sats">${primaryStat(u)}</div>
-          ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${Number(u.zaps_sent || 0).toLocaleString()}</div>` : ''}
-          ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${u.projects_count}</div>` : ''}
+          ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${getLeaderboardCountDisplay(u.zaps_sent)}</div>` : ''}
+          ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${getLeaderboardCountDisplay(u.projects_count)}</div>` : ''}
           <div class="lb-stat lb-meta">🏆 ${getLeaderboardWonDisplay(u.bounties_won)}</div>
         </div>`;
     }).join('') + `</div>`;
