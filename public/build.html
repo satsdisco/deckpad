@@ -507,6 +507,7 @@ function switchToView(viewName) {
   const view = document.getElementById('view-' + viewName);
   if (link) link.classList.add('active');
   if (view) view.classList.add('active');
+  history.replaceState(null, '', '#' + viewName);
 }
 
 document.querySelectorAll('.sidebar-link').forEach(link => {
@@ -1588,6 +1589,7 @@ async function loadLeaderboard(sort) {
       <div class="lb-name-col" style="flex:1">Builder</div>
       <div class="lb-bar-wrap"></div>
       <div class="lb-stat lb-sats">${primaryLabel}</div>
+      ${sort === 'earners' ? '<div class="lb-stat lb-meta">Zaps Sent</div>' : ''}
       ${sort !== 'projects' ? '<div class="lb-stat lb-meta">Projects</div>' : ''}
       <div class="lb-stat lb-meta">Bounties</div>
     </div>`;
@@ -1612,7 +1614,7 @@ async function loadLeaderboard(sort) {
           </div>
           <div class="lb-bar-wrap"><div class="lb-bar-fill" style="width:${barPct}%"></div></div>
           <div class="lb-stat lb-sats">${primaryStat(u)}</div>
-          ${sort === 'earners' && u.zaps_received > 0 ? `<div class="lb-stat lb-meta" title="Zaps received">🤙 ${Number(u.zaps_received).toLocaleString()}</div>` : ''}
+          ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${Number(u.zaps_sent || 0).toLocaleString()}</div>` : ''}
           ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${u.projects_count}</div>` : ''}
           <div class="lb-stat lb-meta">🏆 ${u.bounties_won} won</div>
         </div>`;
@@ -1648,6 +1650,12 @@ document.addEventListener('click', e => {
   const sort = tab.dataset.sort;
   if (sort && sort !== _lbCurrentSort) loadLeaderboard(sort);
 });
+
+// Deep-link: auto-load leaderboard if hash is set
+if (window.location.hash === '#leaderboard' && !_lbLoaded) {
+  _lbLoaded = true;
+  loadLeaderboard('earners');
+}
 </script>
 <script src="/js/auth.js"></script>
 <script>initAuth(function(user) {
