@@ -323,6 +323,9 @@ const MIGRATIONS = [
   { name: 'v016_rsvp_user_id', sql: [
     'ALTER TABLE rsvps ADD COLUMN user_id TEXT',
   ]},
+  { name: 'v017_speaker_user_id', sql: [
+    'ALTER TABLE speakers ADD COLUMN user_id TEXT',
+  ]},
 ];
 
 // Run pending migrations
@@ -1907,8 +1910,14 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Delete speaker (admin only)
-app.delete('/api/speakers/:id', requireAuth, requireAdmin, (req, res) => {
+// Delete speaker (own registration or admin)
+app.delete('/api/speakers/:id', requireAuth, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  if (speaker.user_id !== req.user.id && !req.user.is_admin) {
+    return res.status(403).json({ error: 'Not your registration' });
+  }
+  stmts.deleteVotes.run('speaker', req.params.id);
   db.prepare('DELETE FROM speakers WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -1955,11 +1964,11 @@ app.post('/api/speakers', requireAuth, (req, res) => {
   const event = db.prepare('SELECT id FROM events WHERE id = ?').get(eid);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, eid, name.trim(), ptitle.trim(),
     description || null, parseInt(duration) || 10,
-    github_url || null, demo_url || null, deck_id || null
+    github_url || null, demo_url || null, deck_id || null, req.user?.id || null
   );
   if (req.user?.id) cachedBadgeCheck(req.user.id);
   res.json({ id });

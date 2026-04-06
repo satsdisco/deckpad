@@ -411,6 +411,7 @@ function renderSpeaker(sp, rank) {
         <button class="vote-btn" onclick="event.stopPropagation();voteSpeaker('${esc(sp.id)}',this)">
           <span class="arrow">▲</span><span class="vc">${sp.votes||0}</span>
         </button>
+        ${sp.user_id && _currentUser && (sp.user_id === _currentUser.id || _currentUser.is_admin) ? `<button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;border-radius:12px;color:var(--danger);border-color:var(--danger);margin-top:6px" onclick="event.stopPropagation();withdrawSpeaker('${esc(sp.id)}')">Withdraw</button>` : ''}
       </div>
     </div>`;
 }
@@ -504,6 +505,15 @@ async function voteSpeaker(id, btn) {
   const d = await r.json();
   btn.querySelector('.vc').textContent = d.votes;
   btn.classList.toggle('voted', d.voted);
+}
+
+async function withdrawSpeaker(id) {
+  if (!confirm('Withdraw your speaker registration?')) return;
+  try {
+    const res = await fetch('/api/speakers/' + id, { method: 'DELETE' });
+    if (res.ok) { loadEvent(); }
+    else { const e = await res.json(); alert(e.error || 'Failed'); }
+  } catch { alert('Failed to withdraw'); }
 }
 
 // Load decks for dropdown
