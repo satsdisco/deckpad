@@ -38,15 +38,19 @@
     <div id="deckZapStats"></div>
 
     <div class="viewer-actions">
-      <button class="vote-btn" id="voteBtn"><span class="arrow">▲</span><span id="voteCount">0</span></button>
-      <button class="btn btn-zap" id="zapDeckBtn" onclick="openZapModal()" style="display:none">⚡ Zap</button>
-      <button class="btn btn-ghost" id="downloadBtn">⬇ Download</button>
-      <a class="btn btn-ghost" id="githubBtn" href="#" target="_blank" rel="noopener" style="display:none">⌥ GitHub</a>
-      <a class="btn btn-ghost" id="demoBtn" href="#" target="_blank" rel="noopener" style="display:none">↗ Live Demo</a>
-      <button class="btn btn-ghost" id="embedBtn">⟨/⟩ Embed Code</button>
-      <button class="btn btn-ghost" id="linkBtn">🔗 Copy Link</button>
-      <button class="btn btn-ghost" id="qrBtn" onclick="toggleQR()">⬡ QR Code</button>
-      <button class="btn btn-danger" id="deleteBtn" style="display:none;">🗑 Delete</button>
+      <div class="viewer-actions-group viewer-actions-group-primary">
+        <button class="vote-btn" id="voteBtn"><span class="arrow">▲</span><span id="voteCount">0</span></button>
+        <button class="btn btn-zap" id="zapDeckBtn" onclick="openZapModal()" style="display:none">⚡ Zap</button>
+        <button class="btn btn-ghost" id="downloadBtn">⬇ Download</button>
+      </div>
+      <div class="viewer-actions-group viewer-actions-group-links">
+        <a class="btn btn-ghost" id="githubBtn" href="#" target="_blank" rel="noopener" style="display:none">⌥ GitHub</a>
+        <a class="btn btn-ghost" id="demoBtn" href="#" target="_blank" rel="noopener" style="display:none">↗ Live Demo</a>
+        <button class="btn btn-ghost" id="embedBtn">⟨/⟩ Embed Code</button>
+        <button class="btn btn-ghost" id="linkBtn">🔗 Copy Link</button>
+        <button class="btn btn-ghost" id="qrBtn" onclick="toggleQR()">⬡ QR Code</button>
+        <button class="btn btn-danger" id="deleteBtn" style="display:none;">🗑 Delete</button>
+      </div>
     </div>
 
     <div class="embed-box" id="embedBox">

@@ -270,6 +270,24 @@ a:hover { color: var(--accent); }
 
 /* ─── Pagination ─────────────────────────────────────────────────────────── */
 .pagination { display: flex; justify-content: center; gap: 4px; padding: 0 0 48px; }
+.carousel-counter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(124,92,252,0.06);
+}
+.carousel-counter-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted2);
+}
 .page-btn {
   padding: 6px 12px; font-size: 0.75rem;
   background: transparent; border: 1px solid var(--border);
@@ -370,7 +388,19 @@ a:hover { color: var(--accent); }
   background: transparent; color: var(--muted2);
   border: 1px solid var(--border); font-family: var(--font-mono);
 }
-.viewer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.viewer-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.viewer-actions-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.viewer-actions-group-primary {
+  flex: 0 0 auto;
+}
+.viewer-actions-group-links {
+  flex: 1 1 520px;
+}
 
 .embed-box {
   margin-top: 16px; padding: 12px; background: var(--surface);
@@ -1349,7 +1379,20 @@ a:hover { color: var(--accent); }
 .cal-cell-content {
   display: flex; align-items: center; justify-content: center;
   flex: 1; min-height: 0; width: 100%;
-  margin-top: -20px;
+  margin-top: -12px;
+}
+.cal-event-markers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+}
+.cal-event-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ev-color, var(--accent));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ev-color, var(--accent)) 45%, transparent);
 }
 
 /* Event type icons */
@@ -2640,6 +2683,22 @@ a:hover { color: var(--accent); }
   font-weight: 600;
 }
 
+.deadline-chip.normal {
+  background: rgba(124,92,252,.08);
+  border-color: rgba(124,92,252,.18);
+  color: var(--text2);
+}
+.deadline-chip.soon {
+  background: rgba(242,177,52,.08);
+  border-color: rgba(242,177,52,.22);
+  color: var(--btc-bright);
+}
+.deadline-chip.urgent {
+  background: rgba(224,92,92,.1);
+  border-color: rgba(224,92,92,.32);
+  color: #ff8e8e;
+  box-shadow: 0 0 0 1px rgba(224,92,92,.06), 0 0 18px rgba(224,92,92,.1);
+}
 .deadline-chip.overdue {
   background: rgba(212,67,67,.06);
   border-color: rgba(212,67,67,.2);

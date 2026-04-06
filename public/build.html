@@ -751,14 +751,14 @@ async function loadEvents() {
     }
     const counter = document.getElementById('eventCounter');
     if (counter && carouselEvents.length > 1) {
-      counter.innerHTML = `<button class="carousel-counter-nav" onclick="scrollCarousel(-1)">‹</button><span id="carouselPos">1 / ${carouselEvents.length}</span><button class="carousel-counter-nav" onclick="scrollCarousel(1)">›</button>`;
+      counter.innerHTML = `<span class="carousel-counter-label">Browse events</span><button class="carousel-counter-nav" aria-label="Previous event" onclick="scrollCarousel(-1)">‹</button><span id="carouselPos">Event 1 of ${carouselEvents.length}</span><button class="carousel-counter-nav" aria-label="Next event" onclick="scrollCarousel(1)">›</button>`;
       // Track scroll position
       const grid = document.getElementById('eventsGrid');
       grid.addEventListener('scroll', () => {
         const cardW = grid.querySelector('.event-card')?.offsetWidth || 300;
         const idx = Math.round(grid.scrollLeft / (cardW + 16)) + 1;
         const posEl = document.getElementById('carouselPos');
-        if (posEl) posEl.textContent = idx + ' / ' + carouselEvents.length;
+        if (posEl) posEl.textContent = `Event ${idx} of ${carouselEvents.length}`;
       });
     }
     startCountdowns();
@@ -1003,14 +1003,18 @@ function renderMiniCal() {
     let content = '';
     const evTypeColors = { 'demo-day': '#7c5cfc', 'hackathon': '#39d98a', 'bounty': '#d4a843', 'workshop': '#3CCBDA', 'meetup': '#f472b6' };
     let evColor = '';
+    let titleAttr = '';
     if (hasEvent) {
       const evType = events[0].type || events[0].event_type || 'demo-day';
       evColor = evTypeColors[evType] || '#7c5cfc';
       const icons = events.map(ev => getEventIcon(ev.type || ev.event_type || 'demo-day')).join('');
-      content = `<div class="cal-cell-content">${icons}</div>`;
+      const markers = events.slice(0, 3).map(ev => `<span class="cal-event-dot" style="--ev-color:${evTypeColors[ev.type || ev.event_type || 'demo-day'] || '#7c5cfc'}"></span>`).join('');
+      const label = events.map(ev => ev.name).join(' · ');
+      titleAttr = ` title="${esc(label)}" aria-label="${esc(label)}"`;
+      content = `<div class="cal-cell-content">${icons}</div><div class="cal-event-markers">${markers}</div>`;
     }
 
-    days += `<div class="cal-cell${todayCls}${eventCls}"${click}${evColor ? ` style="--ev-color:${evColor}"` : ''}>
+    days += `<div class="cal-cell${todayCls}${eventCls}"${click}${titleAttr}${evColor ? ` style="--ev-color:${evColor}"` : ''}>
       <div class="cal-cell-num">${d}</div>
       ${content}
     </div>`;

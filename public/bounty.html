@@ -142,11 +142,12 @@ function formatDeadline(deadline) {
   const diff = d - now;
   const overdue = diff < 0;
   const label = d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
-  if (overdue) return { label: 'Deadline passed: ' + label, overdue: true };
+  if (overdue) return { label: 'Deadline passed: ' + label, overdue: true, tone: 'overdue' };
   const days = Math.ceil(diff / 86400000);
-  if (days === 0) return { label: 'Due today', overdue: false };
-  if (days === 1) return { label: '1 day left', overdue: false };
-  return { label: days + ' days left · ' + label, overdue: false };
+  if (days === 0) return { label: 'Due today', overdue: false, tone: 'urgent' };
+  if (days === 1) return { label: '1 day left', overdue: false, tone: 'urgent' };
+  if (days <= 3) return { label: days + ' days left · ' + label, overdue: false, tone: 'soon' };
+  return { label: days + ' days left · ' + label, overdue: false, tone: 'normal' };
 }
 
 // ─── Timeline ─────────────────────────────────────────────────────────────
@@ -428,7 +429,7 @@ async function loadBounty() {
         ${usdHtml}
         ${fundingProgressHtml}
         <div class="bounty-hero-meta">
-          ${dl ? `<span class="deadline-chip ${dl.overdue ? 'overdue' : ''}">⏰ ${esc(dl.label)}</span>` : ''}
+          ${dl ? `<span class="deadline-chip ${dl.tone || (dl.overdue ? 'overdue' : 'normal')}">⏰ ${esc(dl.label)}</span>` : ''}
           <span style="font-size:0.75rem;color:var(--muted2)">Posted ${esc(new Date(b.created_at).toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'}))}</span>
         </div>
       </div>
@@ -446,7 +447,7 @@ async function loadBounty() {
       ${isAdmin ? adminSection : ''}
 
       <div style="margin-bottom:24px">
-        <div class="bounty-section-label"># Participants (${participants.length})</div>
+        <div class="bounty-section-label"># Hunters (${participants.length})</div>
         <div class="bounty-participants">${participantsHtml}</div>
         ${actionsHtml ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">${actionsHtml}</div>` : ''}
       </div>
@@ -457,7 +458,7 @@ async function loadBounty() {
       </div>
 
       <div class="bounty-stat-bar">
-        <div class="bounty-stat-item">👥 <span class="bounty-stat-value">${participants.length}</span> participant${participants.length !== 1 ? 's' : ''}</div>
+        <div class="bounty-stat-item">👥 <span class="bounty-stat-value">${participants.length}</span> ${participants.length !== 1 ? 'hunters' : 'hunter'}</div>
         <div class="bounty-stat-item">📦 <span class="bounty-stat-value">${submissions.length}</span> submission${submissions.length !== 1 ? 's' : ''}</div>
         <div class="bounty-stat-item">📅 Created <span class="bounty-stat-value">${daysSinceLabel}</span></div>
       </div>
