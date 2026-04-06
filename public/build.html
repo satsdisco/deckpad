@@ -561,6 +561,7 @@ async function loadBounties() {
       const tags = typeof b.tags === 'string' ? b.tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
       const deadline = b.deadline ? `<span class="bounty-deadline">⏳ ${esc(new Date(b.deadline).toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'}))}</span>` : '';
       const participantCount = Array.isArray(b.participants) ? b.participants.length : (b.participant_count || 0);
+      const participantLabel = participantCount === 1 ? 'hunter' : 'hunters';
       const baseAmt = Number(b.sats_amount || 0);
       const crowdAmt = Number(b.funded_amount || 0);
       const totalAmt = baseAmt + crowdAmt;
@@ -586,7 +587,7 @@ async function loadBounties() {
           </div>` : ''}
           ${winner}
           <div class="bc-footer">
-            <span class="bc-builders">👥 ${participantCount}</span>
+            <span class="bc-builders">👥 ${participantCount} ${participantLabel}</span>
             ${tags ? `<div class="bc-tags">${tags}</div>` : ''}
             <a class="bc-boost-btn" href="/bounty/${esc(b.id)}" onclick="event.stopPropagation()">⚡ Boost</a>
           </div>

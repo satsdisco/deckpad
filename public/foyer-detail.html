@@ -30,7 +30,10 @@
 
   <div class="foyer-detail-section" id="comments" style="display:none">
     <div class="comments-header">
-      <span id="ideaCommentsHeader">Comments</span>
+      <div class="comments-title-wrap">
+        <span class="comments-title-label">Comments</span>
+        <span class="comments-count" id="ideaCommentsCount">0</span>
+      </div>
       <div class="comment-filters" id="ideaCommentFilters" style="display:none">
         <button class="comment-filter active" data-sort="top" onclick="sortIdeaComments('top',this)">Top</button>
         <button class="comment-filter" data-sort="newest" onclick="sortIdeaComments('newest',this)">Newest</button>
@@ -246,8 +249,8 @@ async function loadIdeaComments() {
     }
     const res = await fetch('/api/ideas/' + ideaId + '/comments');
     const comments = await res.json();
-    const header = document.getElementById('ideaCommentsHeader');
-    if (header) header.textContent = 'Comments (' + comments.length + ')';
+    const commentsCountEl = document.getElementById('ideaCommentsCount');
+    if (commentsCountEl) commentsCountEl.textContent = String(comments.length);
     if (!comments.length) { list.innerHTML = '<p class="sign-in-prompt">No comments yet.</p>'; return; }
     buildIdeaThreadData(comments);
     sortIdeaComments('top');

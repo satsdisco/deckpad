@@ -247,7 +247,10 @@ async function loadProject() {
 
         <div class="comments-section" id="comments" style="border:none;padding:0;margin-top:16px">
           <div class="comments-header">
-            <span id="commentsHeader2">Comments</span>
+            <div class="comments-title-wrap">
+              <span class="comments-title-label">Comments</span>
+              <span class="comments-count" id="commentsCountProj">0</span>
+            </div>
             <div class="comment-filters" id="commentFiltersProj" style="display:none">
               <button class="comment-filter active" data-sort="top" onclick="sortProjComments('top',this)">Top</button>
               <button class="comment-filter" data-sort="newest" onclick="sortProjComments('newest',this)">Newest</button>
@@ -344,6 +347,8 @@ async function loadComments() {
 
     const res = await fetch('/api/projects/' + projectId + '/comments');
     const comments = await res.json();
+    const commentsCountEl = document.getElementById('commentsCountProj');
+    if (commentsCountEl) commentsCountEl.textContent = String(comments.length);
     if (!comments.length) { list.innerHTML = '<p class="sign-in-prompt">No comments yet.</p>'; return; }
 
     buildProjThreadData(comments);

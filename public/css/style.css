@@ -213,6 +213,34 @@ a:hover { color: var(--accent); }
   font-size: 0.75rem; color: var(--muted); display: flex;
   align-items: center; gap: 10px;
 }
+.card-meta-primary,
+.card-meta-secondary {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+.card-meta-primary {
+  gap: 12px;
+}
+.card-meta-secondary {
+  margin-top: 4px;
+}
+.card-meta-author,
+.card-meta-date,
+.card-meta-stat {
+  min-width: 0;
+  white-space: nowrap;
+}
+.card-meta-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-meta-date {
+  flex-shrink: 0;
+}
+.card-meta-votes {
+  color: var(--accent);
+  font-weight: 600;
+}
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .card-tag {
   font-size: 0.65rem; padding: 3px 10px;
@@ -1012,7 +1040,25 @@ a:hover { color: var(--accent); }
   text-transform: uppercase; letter-spacing: .1em; color: var(--accent);
   margin-bottom: 16px;
 }
-.comments-header > span::before { content: '# '; color: var(--dim); }
+.comments-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.comments-title-label::before { content: '# '; color: var(--dim); }
+.comments-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(124,92,252,0.08);
+  color: var(--muted2);
+  font-size: 0.68rem;
+  letter-spacing: .04em;
+}
 .comment-filters { display: flex; gap: 4px; }
 .comment-filter {
   background: none; border: 1px solid var(--border); border-radius: 100px;
