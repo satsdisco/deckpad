@@ -267,6 +267,11 @@ async function loadBounty() {
           <div style="font-size:0.75rem;color:var(--muted2)">Be the first to submit a solution!</div>
         </div>`;
 
+    // Prize pool = base bounty + crowd contributions
+    const baseSats = Number(b.sats_amount || 0);
+    const crowdSats = Number(b.funded_amount || 0);
+    const totalPool = baseSats + crowdSats;
+
     // Winner section (shown when bounty is claimed/completed)
     let winnerSection = '';
     if (b.winner_name && (b.status === 'claimed' || b.status === 'completed')) {
@@ -369,10 +374,6 @@ async function loadBounty() {
       }
     }
 
-    // Prize pool = base bounty + crowd contributions
-    const baseSats = Number(b.sats_amount || 0);
-    const crowdSats = Number(b.funded_amount || 0);
-    const totalPool = baseSats + crowdSats;
     const usdApprox = (totalPool / 100000000 * 100000).toFixed(2);
     const usdHtml = `<div class="bounty-hero-usd">approx USD ${usdApprox}</div>`;
 

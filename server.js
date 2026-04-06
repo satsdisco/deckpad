@@ -13,6 +13,14 @@ const puppeteer = require('puppeteer');
 const cookieSession = require('cookie-session');
 const QRCode = require('qrcode');
 const { filterPublicLeaderboardRows } = require('./public/js/ui-rules.js');
+const {
+  filterPublicComments,
+  filterPublicIdeas,
+  filterPublicProjects,
+  hasBlockedCommentContent,
+  isPlaceholderIdea,
+  isPlaceholderProject,
+} = require('./content-rules.js');
 let sharp;
 try { sharp = require('sharp'); } catch { sharp = null; }
 
@@ -2051,13 +2059,14 @@ app.get('/api/projects', (req, res) => {
   }
   query += ` ORDER BY votes DESC, p.created_at DESC`;
   const rows = db.prepare(query).all(...params);
-  res.json(rows);
+  res.json(filterPublicProjects(rows));
 });
 
 app.post('/api/projects', requireAuth, (req, res) => {
   const { name, builder, description, status, tags, category, bounty_id, repo_url, repo, demo_url, demo } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!builder || !builder.trim()) return res.status(400).json({ error: 'builder required' });
+  if (isPlaceholderProject({ name, description })) return res.status(400).json({ error: 'Project looks like placeholder content' });
   const id = crypto.randomUUID();
   const slug = uniqueSlug('projects', toSlug(name.trim()));
   const { deck_id } = req.body;
@@ -2079,6 +2088,9 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
   if (!project) return res.status(404).json({ error: 'Not found' });
   if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) return res.status(403).json({ error: 'Not your project' });
   const { name, description, status, tags, category, repo_url, demo_url, deck_id } = req.body;
+  if (isPlaceholderProject({ name: name !== undefined ? name : project.name, description: description !== undefined ? description : project.description })) {
+    return res.status(400).json({ error: 'Project looks like placeholder content' });
+  }
   db.prepare(`UPDATE projects SET
     name = COALESCE(?, name), description = COALESCE(?, description),
     status = COALESCE(?, status), tags = COALESCE(?, tags),
@@ -2121,7 +2133,7 @@ app.get('/api/projects/:id', (req, res) => {
     LEFT JOIN (SELECT deck_id, COUNT(*) as comment_count FROM comments GROUP BY deck_id) c ON p.id = c.deck_id
     WHERE p.id = ?
   `).get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row || isPlaceholderProject(row)) return res.status(404).json({ error: 'Not found' });
   res.json(row);
 });
 
@@ -2138,13 +2150,14 @@ app.get('/api/projects/:id/comments', (req, res) => {
     WHERE c.deck_id = ?
     ORDER BY c.created_at ASC
   `).all(voterId, req.params.id);
-  res.json(rows);
+  res.json(filterPublicComments(rows));
 });
 
 // POST /api/projects/:id/comments
 app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
   const { content, parent_id } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+  if (hasBlockedCommentContent(content)) return res.status(400).json({ error: 'Comment violates content rules' });
   if (parent_id) {
     const parent = db.prepare('SELECT id, deck_id, parent_id FROM comments WHERE id = ?').get(parent_id);
     if (!parent || parent.deck_id !== req.params.id) return res.status(400).json({ error: 'Invalid parent comment' });
@@ -2168,6 +2181,18 @@ app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
     if (_proj?.user_id) notify(_proj.user_id, 'comment', req.user.id, authorName, 'project', req.params.id, _proj.name);
   }
   res.json({ id });
+});
+
+app.delete('/api/comments/:id', requireAuth, requireAdmin, (req, res) => {
+  const comment = db.prepare('SELECT id FROM comments WHERE id = ?').get(req.params.id);
+  if (!comment) return res.status(404).json({ error: 'Not found' });
+  const commentIds = db.prepare('SELECT id FROM comments WHERE id = ? OR parent_id = ?').all(req.params.id, req.params.id).map((row) => row.id);
+  if (commentIds.length) {
+    const placeholders = commentIds.map(() => '?').join(', ');
+    db.prepare(`DELETE FROM votes WHERE target_type = 'comment' AND target_id IN (${placeholders})`).run(...commentIds);
+  }
+  db.prepare('DELETE FROM comments WHERE id = ? OR parent_id = ?').run(req.params.id, req.params.id);
+  res.json({ ok: true });
 });
 
 // ─── Foyer Activity API ───────────────────────────────────────────────────────
@@ -2209,7 +2234,7 @@ app.get('/api/foyer/activity', (req, res) => {
     ORDER BY ts DESC
     LIMIT 15
   `).all();
-  res.json(rows);
+  res.json(filterPublicIdeas(rows.map((row) => ({ ...row, title: row.idea_title })) ).map(({ title, ...row }) => row));
 });
 
 // GET /api/foyer/top-zappers — top 5 zappers on ideas this week
@@ -2250,20 +2275,22 @@ app.get('/api/ideas', (req, res) => {
     LEFT JOIN (SELECT idea_id, COUNT(*) as team_size FROM idea_members GROUP BY idea_id) t ON i.id = t.idea_id
     ORDER BY ${orderBy}
   `).all();
+  const visibleRows = filterPublicIdeas(rows);
   // Attach first 2 member names per idea
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const names = db.prepare(
       `SELECT u.name FROM idea_members im JOIN users u ON im.user_id = u.id WHERE im.idea_id = ? ORDER BY im.created_at ASC LIMIT 2`
     ).all(row.id);
     row.member_names = names.map(n => n.name).join(', ') || null;
   }
-  res.json(rows);
+  res.json(visibleRows);
 });
 
 // POST /api/ideas — create idea
 app.post('/api/ideas', requireAuth, (req, res) => {
   const { title, description, looking_for } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
+  if (isPlaceholderIdea({ title, description })) return res.status(400).json({ error: 'Idea looks like placeholder content' });
   const id = crypto.randomUUID();
   const slug = uniqueSlug('ideas', toSlug(title.trim()));
   const lookingFor = Array.isArray(looking_for) ? looking_for.join(',') : (looking_for || null);
@@ -2289,7 +2316,7 @@ app.get('/api/ideas/:id', (req, res) => {
     LEFT JOIN (SELECT idea_id, COUNT(*) as team_size FROM idea_members GROUP BY idea_id) t ON i.id = t.idea_id
     WHERE i.id = ?
   `).get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row || isPlaceholderIdea(row)) return res.status(404).json({ error: 'Not found' });
   // Track views
   const today = new Date().toISOString().slice(0, 10);
   if (row.views_date === today) {
@@ -2321,6 +2348,7 @@ app.put('/api/ideas/:id', requireAuth, (req, res) => {
   if (title !== undefined && (!title || !title.trim())) return res.status(400).json({ error: 'title required' });
   const newTitle = title !== undefined ? title.trim() : idea.title;
   const newDesc = description !== undefined ? (description || null) : idea.description;
+  if (isPlaceholderIdea({ title: newTitle, description: newDesc })) return res.status(400).json({ error: 'Idea looks like placeholder content' });
   const newLooking = looking_for !== undefined ? (Array.isArray(looking_for) ? looking_for.join(',') : (looking_for || null)) : idea.looking_for;
   const newSlug = title !== undefined ? uniqueSlug('ideas', toSlug(newTitle)) : idea.slug;
   db.prepare('UPDATE ideas SET title = ?, description = ?, looking_for = ?, slug = ? WHERE id = ?').run(
@@ -2410,13 +2438,14 @@ app.get('/api/ideas/:id/comments', (req, res) => {
     WHERE c.deck_id = ?
     ORDER BY c.created_at ASC
   `).all(voterId, req.params.id);
-  res.json(rows);
+  res.json(filterPublicComments(rows));
 });
 
 // POST /api/ideas/:id/comments
 app.post('/api/ideas/:id/comments', requireAuth, (req, res) => {
   const { content, parent_id } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+  if (hasBlockedCommentContent(content)) return res.status(400).json({ error: 'Comment violates content rules' });
   if (parent_id) {
     const parent = db.prepare('SELECT id, deck_id, parent_id FROM comments WHERE id = ?').get(parent_id);
     if (!parent || parent.deck_id !== req.params.id) return res.status(400).json({ error: 'Invalid parent comment' });
