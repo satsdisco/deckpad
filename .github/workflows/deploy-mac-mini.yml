@@ -37,10 +37,10 @@ jobs:
           unset BASH_ENV
           case "${GITHUB_REPOSITORY}:${DEPLOY_BRANCH}" in
             satsdisco/lunarpad:staging)
-              /Volumes/External/openclaw-workspace-v2/scripts/lunarpad-deploy-staging.sh
+              /Users/savetherobot/.github-runners/deploy/lunarpad-deploy-staging.sh
               ;;
             satsdisco/lunarpad:main)
-              /Volumes/External/openclaw-workspace-v2/scripts/lunarpad-deploy-prod.sh
+              /Users/savetherobot/.github-runners/deploy/lunarpad-deploy-prod.sh
               ;;
             *)
               echo "No deploy mapping for ${GITHUB_REPOSITORY}:${DEPLOY_BRANCH}" >&2
