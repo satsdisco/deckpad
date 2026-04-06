@@ -1,0 +1,76 @@
+name: Deploy to Mac mini
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:
+    inputs:
+      deploy_branch:
+        description: Branch to deploy (main or staging)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - main
+
+concurrency:
+  group: deploy-${{ inputs.deploy_branch || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS, lunarpad-macmini]
+    env:
+      DEPLOY_BRANCH: ${{ inputs.deploy_branch || github.ref_name }}
+    steps:
+      - name: Show deploy target
+        run: |
+          echo "repo=${GITHUB_REPOSITORY}"
+          echo "branch=${DEPLOY_BRANCH}"
+          echo "sha=${GITHUB_SHA}"
+
+      - name: Deploy on Mac mini
+        run: |
+          set -x
+          unset BASH_ENV
+          case "${GITHUB_REPOSITORY}:${DEPLOY_BRANCH}" in
+            satsdisco/lunarpad:staging)
+              REPO="/Volumes/External/openclaw-workspace-v2/lunarpad-staging"
+              LABEL="com.lunarpad.staging"
+              BRANCH="staging"
+              PORT="3102"
+              URL="https://decks.satsdisco.com"
+              ;;
+            satsdisco/lunarpad:main)
+              REPO="/Volumes/External/openclaw-workspace-v2/deckpad"
+              LABEL="com.deckpad.server"
+              BRANCH="main"
+              PORT="3100"
+              URL="https://lunarpad.dev"
+              ;;
+            *)
+              echo "No deploy mapping for ${GITHUB_REPOSITORY}:${DEPLOY_BRANCH}" >&2
+              exit 1
+              ;;
+          esac
+
+          DOMAIN="gui/$(id -u)"
+          GIT_BIN="/opt/homebrew/bin/git"
+          GIT_DIR="$REPO/.git"
+          FETCH_URL="https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
+          echo "==> Repo: $REPO"
+          echo "==> Branch: $BRANCH"
+          echo "==> Fetch URL host: github.com/${GITHUB_REPOSITORY}.git"
+          cd /tmp
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" fetch "$FETCH_URL" "$BRANCH"
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" checkout "$BRANCH"
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" reset --hard FETCH_HEAD
+          launchctl kickstart -k "$DOMAIN/$LABEL"
+          sleep 3
+          "$GIT_BIN" --git-dir="$GIT_DIR" --work-tree="$REPO" rev-parse HEAD
+          launchctl print "$DOMAIN/$LABEL" | sed -n '1,40p'
+          lsof -nP -iTCP:${PORT} -sTCP:LISTEN || true
+          curl -I -s "$URL" | sed -n '1,12p'
