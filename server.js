@@ -3195,6 +3195,32 @@ function getLiveSessionPayload(eventId) {
     : null;
   const next_speaker = getNextQueueSpeaker(eventId, session?.current_speaker_id || null);
 
+  const nowMs = Date.now();
+  let time_remaining_seconds = null;
+  let stage_status_label = session?.status === 'voting' ? 'Voting Open' : (session?.status === 'winner_pending' ? 'Winner Pending' : (session?.is_active ? 'Live Now' : 'Offline'));
+  let time_remaining_label = stage_status_label === 'Winner Pending' ? 'Winner Pending' : 'Awaiting next presenter';
+  if (current && session?.current_started_at) {
+    const startMs = Date.parse(session.current_started_at + 'Z');
+    const durationSeconds = Number(session.current_duration_minutes || 10) * 60;
+    if (Number.isFinite(startMs)) {
+      const elapsed = Math.floor((nowMs - startMs) / 1000);
+      time_remaining_seconds = Math.max(0, durationSeconds - elapsed);
+      if (elapsed < 0) {
+        time_remaining_label = `Starts in ${Math.abs(elapsed)}s`;
+      } else if (time_remaining_seconds > 0) {
+        time_remaining_label = `${time_remaining_seconds}s remaining`;
+      } else {
+        time_remaining_label = 'Time is up';
+      }
+    }
+  }
+
+  const lineup_groups = {
+    current: current ? [current] : [],
+    upcoming: speakers.filter((speaker) => !['presented', 'skipped', 'winner'].includes(speaker.status) && speaker.id !== current?.id),
+    completed: speakers.filter((speaker) => ['presented', 'skipped', 'winner'].includes(speaker.status)),
+  };
+
   const scoreboard = {
     total_votes: speakers.reduce((sum, speaker) => sum + Number(speaker.votes || 0), 0),
     total_zaps: speakers.reduce((sum, speaker) => sum + Number(speaker.zap_total || 0), 0),
@@ -3212,7 +3238,11 @@ function getLiveSessionPayload(eventId) {
     speaker: current,
     next_speaker,
     speakers,
+    lineup_groups,
     scoreboard,
+    stage_status_label,
+    time_remaining_seconds,
+    time_remaining_label,
     meet_url: session?.meet_url || event.virtual_link || null,
     results_url: results ? `/event/${eventId}#results` : null,
   };

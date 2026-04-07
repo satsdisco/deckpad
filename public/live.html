@@ -198,6 +198,45 @@ body { background: #080a14; overflow: hidden; }
 }
 .live-vote-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 .live-vote-btn.closed { background: rgba(255,255,255,0.08); color: var(--muted2); border: 1px solid rgba(255,255,255,0.08); }
+.live-stage-timer {
+  margin-top: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.live-stage-timer-value {
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--text);
+}
+.live-stage-timer-meta {
+  font-size: 0.74rem;
+  color: var(--muted2);
+}
+.live-deck-status-note {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: var(--muted2);
+}
+.live-sidebar-section-title {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin: 10px 8px 6px;
+}
+.live-lineup-group {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 8px;
+}
+.live-lineup-group:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+}
 
 /* ── Main content ── */
 .live-content {
@@ -551,7 +590,12 @@ body { background: #080a14; overflow: hidden; }
           <div class="live-stage-kicker">Demo Day Live</div>
           <div class="live-stage-heading" id="stageHeading">Waiting for host</div>
           <div class="live-stage-subcopy" id="stageSubcopy">The stage opens when the host starts the session.</div>
+          <div class="live-stage-timer">
+            <div class="live-stage-timer-value" id="stageTimerValue">--:--</div>
+            <div class="live-stage-timer-meta" id="stageTimerMeta">Awaiting next presenter</div>
+          </div>
           <div class="live-next-up" id="nextSpeakerText">Next up: —</div>
+          <div class="live-deck-status-note" id="deckStatusNote">Deck not loaded yet.</div>
         </div>
         <div class="live-stage-scoreboard">
           <div class="live-stage-kicker">Session pulse</div>
@@ -605,7 +649,7 @@ body { background: #080a14; overflow: hidden; }
     <!-- Speaker list sidebar -->
     <div class="live-sidebar">
       <div class="live-sidebar-head">Lineup</div>
-      <div class="live-speaker-list" id="speakerList"></div>
+      <div class="live-speaker-list" id="speakerList"><div class="live-lineup-group"><div class="live-sidebar-section-title">Live Now</div><div id="lineupCurrent"></div></div><div class="live-lineup-group"><div class="live-sidebar-section-title">Upcoming</div><div id="lineupUpcoming"></div></div><div class="live-lineup-group"><div class="live-sidebar-section-title">Completed</div><div id="lineupCompleted"></div></div></div>
     </div>
 
   </div>
@@ -667,6 +711,49 @@ function setStatus(active, data = null) {
   pill.className = `live-state-pill ${state.tone}`;
 }
 
+function renderTimer(data) {
+  const timerValue = document.getElementById('stageTimerValue');
+  const timerMeta = document.getElementById('stageTimerMeta');
+  const seconds = data?.time_remaining_seconds;
+  if (typeof seconds === 'number') {
+    const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const secs = String(seconds % 60).padStart(2, '0');
+    timerValue.textContent = `${mins}:${secs}`;
+  } else {
+    timerValue.textContent = '--:--';
+  }
+  const sessionLabel = data?.stage_status_label || 'Awaiting next presenter';
+  if (data?.session?.status === 'voting' && typeof seconds === 'number') {
+    timerMeta.textContent = `${sessionLabel} • ${data?.time_remaining_label || 'remaining'}`;
+  } else {
+    timerMeta.textContent = data?.time_remaining_label || sessionLabel || 'Awaiting next presenter';
+  }
+}
+
+function renderLineupGroups(data) {
+  const current = document.getElementById('lineupCurrent');
+  const upcoming = document.getElementById('lineupUpcoming');
+  const completed = document.getElementById('lineupCompleted');
+  const renderSpeaker = (s, roleLabel = '') => {
+    const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const isClickable = isAdmin && !['presented', 'skipped', 'winner'].includes(s.status);
+    const statusTag = roleLabel ? `<span class="live-speaker-status-tag">${roleLabel}</span>` : (['presented', 'skipped', 'winner'].includes(s.status) ? `<span class="live-speaker-status-tag">${esc(s.status)}</span>` : '');
+    return `
+      <div class="live-speaker-item${roleLabel === 'UP NEXT' ? ' status-up-next' : ''}${roleLabel === 'NOW' ? ' active' : ''}${['presented','skipped','winner'].includes(s.status) ? ' status-complete' : ''}" ${isClickable ? `onclick="setSpeaker('${esc(s.id)}')"` : ''}>
+        <div class="live-speaker-avatar">${esc(initials)}</div>
+        <div class="live-speaker-info">
+          <div class="live-speaker-name">${esc(s.name)}</div>
+          <div class="live-speaker-project">${esc(s.project_title || s.project || '')}</div>
+        </div>
+        ${statusTag}
+        <span class="live-votes-badge">▲${Number(s.votes || 0).toLocaleString()}</span>
+      </div>`;
+  };
+  current.innerHTML = (data?.lineup_groups?.current || []).map((s) => renderSpeaker(s, 'NOW')).join('') || '<div class="live-next-up">Awaiting next presenter.</div>';
+  upcoming.innerHTML = (data?.lineup_groups?.upcoming || []).map((s, idx) => renderSpeaker(s, idx === 0 ? 'UP NEXT' : '')).join('') || '<div class="live-next-up">No one queued yet.</div>';
+  completed.innerHTML = (data?.lineup_groups?.completed || []).map((s) => renderSpeaker(s)).join('') || '<div class="live-next-up">No completed presenters yet.</div>';
+}
+
 function renderStageMeta(data) {
   const spk = data?.speaker;
   const state = formatSessionState(data);
@@ -679,6 +766,8 @@ function renderStageMeta(data) {
     : (data?.active ? `Next up: none yet — ${state.label}` : 'Next up: —');
   document.getElementById('sessionVotes').textContent = Number(data?.scoreboard?.total_votes || 0).toLocaleString();
   document.getElementById('sessionZaps').textContent = Number(data?.scoreboard?.total_zaps || 0).toLocaleString();
+  document.getElementById('deckStatusNote').textContent = !spk ? 'Awaiting next presenter.' : (spk?.deck_id && spk?.entry_point ? 'Deck is live on stage.' : 'Deck missing — fallback stage summary is carrying the flow.');
+  renderTimer(data);
 }
 
 function renderAdminControls(data) {
@@ -744,30 +833,8 @@ function render(data) {
 
   speakers = data.speakers || [];
   const listEl = document.getElementById('speakerList');
-  listEl.innerHTML = speakers.map(s => {
-    const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const isNow = data.speaker?.id === s.id;
-    const isNext = data.next_speaker?.id === s.id;
-    const isComplete = ['presented', 'skipped', 'winner'].includes(s.status);
-    const statusTag = isNow
-      ? '<span class="live-now-badge">NOW</span>'
-      : isNext
-        ? '<span class="live-speaker-status-tag">UP NEXT</span>'
-        : isComplete
-          ? `<span class="live-speaker-status-tag">${esc(s.status)}</span>`
-          : '';
-    return `
-      <div class="live-speaker-item${isNow ? ' active' : ''}${isNext ? ' status-up-next' : ''}${isComplete ? ' status-complete' : ''}" id="spk-${esc(s.id)}"
-        onclick="${isAdmin ? `setSpeaker('${esc(s.id)}')` : ''}">
-        <div class="live-speaker-avatar">${esc(initials)}</div>
-        <div class="live-speaker-info">
-          <div class="live-speaker-name">${esc(s.name)}</div>
-          <div class="live-speaker-project">${esc(s.project_title || s.project || '')}</div>
-        </div>
-        ${statusTag}
-        <span class="live-votes-badge">▲${Number(s.votes || 0).toLocaleString()}</span>
-      </div>`;
-  }).join('');
+  listEl.querySelectorAll('.live-speaker-item').forEach((node) => node.remove());
+  renderLineupGroups(data);
 
   const spk = data.speaker;
   if (spk) {
