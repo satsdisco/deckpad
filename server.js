@@ -2102,6 +2102,13 @@ app.post('/api/speakers/:id/presented', requireAuth, requireAdmin, (req, res) =>
   res.json({ ok: true });
 });
 
+app.delete('/api/speakers/:id/presented', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  db.prepare("UPDATE speakers SET presented_at = NULL, status = 'scheduled' WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 app.get('/api/events/:id/speakers', (req, res) => {
   const rows = db.prepare(`
     SELECT s.*, s.project_title as project, COALESCE(v.vote_count, 0) as votes
@@ -3382,6 +3389,25 @@ app.post('/api/live/:eventId/mark-presented', requireAuth, requireAdmin, (req, r
   const remainingSpeaker = getNextQueueSpeaker(req.params.eventId, currentSpeaker.id);
   const nextStatus = remainingSpeaker ? 'live' : 'presentations_complete';
   db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = ?, updated_at = datetime('now') WHERE event_id = ?").run(nextStatus, req.params.eventId);
+
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/unmark-presented', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  const speaker = db.prepare(`
+    SELECT * FROM speakers
+    WHERE event_id = ? AND presented_at IS NOT NULL
+    ORDER BY presented_at DESC, queue_position DESC, created_at DESC
+    LIMIT 1
+  `).get(req.params.eventId);
+  if (!speaker) return res.status(404).json({ error: 'No presented speaker to undo' });
+
+  db.prepare("UPDATE speakers SET presented_at = NULL, status = 'scheduled' WHERE id = ?").run(speaker.id);
+  resetSpeakerStatusesForSession(req.params.eventId, speaker.id);
+  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(speaker.id, req.params.eventId);
 
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });

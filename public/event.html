@@ -472,7 +472,7 @@ function renderSpeaker(sp, rank) {
         <button class="vote-btn" onclick="event.stopPropagation();voteSpeaker('${esc(sp.id)}',this)">
           <span class="arrow">▲</span><span class="vc">${sp.votes||0}</span>
         </button>
-        ${_currentUser && _currentUser.is_admin && !isPresented ? `<button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;border-radius:12px;margin-top:6px" onclick="event.stopPropagation();markSpeakerPresented('${esc(sp.id)}')">Mark Presented</button>` : ''}
+        ${_currentUser && _currentUser.is_admin && !isPresented ? `<button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;border-radius:12px;margin-top:6px" onclick="event.stopPropagation();markSpeakerPresented('${esc(sp.id)}')">Mark Presented</button><button class="btn btn-ghost" style="padding:6px 10px;font-size:0.72rem" onclick="undoSpeakerPresented('${esc(sp.id)}')">Undo Presented</button>` : ''}
         ${sp.user_id && _currentUser && (sp.user_id === _currentUser.id || _currentUser.is_admin) && !isPresented ? `<button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;border-radius:12px;color:var(--danger);border-color:var(--danger);margin-top:6px" onclick="event.stopPropagation();withdrawSpeaker('${esc(sp.id)}')">Withdraw</button>` : ''}
       </div>
     </div>`;
@@ -586,6 +586,15 @@ async function markSpeakerPresented(id) {
     if (res.ok) { loadEvent(); }
     else { const e = await res.json(); alert(e.error || 'Failed'); }
   } catch { alert('Failed to mark presenter'); }
+}
+
+async function undoSpeakerPresented(id) {
+  if (!confirm('Undo presented status for this speaker?')) return;
+  try {
+    const res = await fetch('/api/speakers/' + id + '/presented', { method: 'DELETE' });
+    if (res.ok) { loadEvent(); }
+    else { const e = await res.json(); alert(e.error || 'Failed'); }
+  } catch { alert('Failed to undo presented'); }
 }
 
 // Load decks for dropdown

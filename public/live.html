@@ -719,6 +719,7 @@ body { background: #080a14; overflow: hidden; }
     <button class="btn-live-admin" id="openVotingBtn" onclick="openVoting()" style="display:none">Open Final Voting</button>
     <button class="btn-live-admin" id="closeVotingBtn" onclick="closeVoting()" style="display:none">Close Final Voting</button>
     <button class="btn-live-admin" id="markPresentedBtn" onclick="markPresented()" style="display:none">Mark Presented</button>
+    <button class="btn-live-admin" id="undoPresentedBtn" onclick="undoPresented()" style="display:none">Undo Presented</button>
     <button class="btn-live-admin" id="advanceBtn" onclick="advanceSpeaker()" style="display:none">Advance Queue</button>
     <button class="btn-live-admin danger" id="skipSpeakerBtn" onclick="skipSpeaker()" style="display:none">Skip Speaker</button>
     <button class="btn-live-admin danger" id="stopBtn" onclick="stopSession()" style="display:none">■ End Session</button>
@@ -879,6 +880,7 @@ function renderAdminControls(data) {
   document.getElementById('openVotingBtn').style.display = finalVotingReady ? '' : 'none';
   document.getElementById('closeVotingBtn').style.display = finalVotingOpen && votingOpen ? '' : 'none';
   document.getElementById('markPresentedBtn').style.display = active && hasSpeaker ? '' : 'none';
+  document.getElementById('undoPresentedBtn').style.display = active && !hasSpeaker && (data?.lineup_groups?.completed || []).some((speaker) => speaker.status === 'presented') ? '' : 'none';
   document.getElementById('advanceBtn').style.display = active ? '' : 'none';
   document.getElementById('skipSpeakerBtn').style.display = active && hasSpeaker ? '' : 'none';
   document.getElementById('adminSpeakerHint').textContent = active
@@ -1084,6 +1086,10 @@ async function advanceSpeaker() {
 
 async function markPresented() {
   await hostAction(`/api/live/${eventId}/mark-presented`);
+}
+
+async function undoPresented() {
+  await hostAction(`/api/live/${eventId}/unmark-presented`);
 }
 
 async function skipSpeaker() {
