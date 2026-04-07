@@ -6,36 +6,41 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8');
 
-test('build page includes a dismissible first-visit onboarding panel with quick actions', () => {
+test('build page onboarding stays progress-based until setup is actually done', () => {
   const html = read('public', 'build.html');
   const css = read('public', 'css', 'style.css');
 
   assert.match(html, /id="firstVisitPanel"/);
   assert.match(html, /Welcome to LunarPad/);
   assert.match(html, /id="onboardingNameSuffix"/);
-  assert.match(html, /Start with Events/);
-  assert.match(html, /Suggested first steps/);
-  assert.match(html, /See what is live/);
-  assert.match(html, /Projects/);
+  assert.match(html, /0 \/ 3 complete/);
+  assert.match(html, /Set up your profile/);
+  assert.match(html, /Add your first project/);
+  assert.match(html, /Explore the live flow/);
+  assert.match(html, /Open profile/);
+  assert.match(html, /Add project/);
+  assert.match(html, /Browse build flow/);
+  assert.match(html, /Events/);
   assert.match(html, /Bounties/);
   assert.match(html, /The Foyer/);
   assert.match(html, /Skip/);
   assert.match(html, /const FIRST_VISIT_PANEL_KEY = 'lunarpad:first-visit-panel:dismissed:v2'/);
+  assert.match(html, /const ONBOARDING_PROGRESS_KEY = 'lunarpad:onboarding-progress:v1'/);
   assert.match(html, /function shouldForceShowFirstVisitPanel/);
-  assert.match(html, /showOnboarding/);
-  assert.match(html, /function hydrateFirstVisitPanel/);
-  assert.match(html, /function maybeShowFirstVisitPanel/);
-  assert.match(html, /function dismissFirstVisitPanel/);
+  assert.match(html, /function readOnboardingProgress/);
+  assert.match(html, /function getOnboardingChecklistState/);
+  assert.match(html, /function renderOnboardingChecklist/);
+  assert.match(html, /function markOnboardingTaskDone/);
   assert.match(html, /function handleOnboardingAction/);
-  assert.match(html, /hashView && hashView !== 'events'/);
-  assert.match(html, /maybeShowFirstVisitPanel\(user\)/);
+  assert.match(html, /viewName === 'project'/);
+  assert.doesNotMatch(html, /function handleOnboardingAction\([\s\S]*dismissFirstVisitPanel\(\)/);
 
-  assert.match(css, /\.onboarding-panel \{/);
+  assert.match(css, /\.onboarding-progress \{/);
   assert.match(css, /\.onboarding-steps \{/);
-  assert.match(css, /\.onboarding-step \{/);
-  assert.match(css, /\.onboarding-primary \{/);
+  assert.match(css, /\.onboarding-step-actions \{/);
+  assert.match(css, /\.onboarding-step-status \{/);
   assert.match(css, /\.onboarding-shortcuts \{/);
-  assert.match(css, /@media \(max-width: 768px\) \{[\s\S]*\.onboarding-primary \{[\s\S]*flex-direction: column;/);
+  assert.match(css, /@media \(max-width: 768px\) \{[\s\S]*\.onboarding-progress \{/);
 });
 
 test('profile availability stays hidden until the owner chooses to edit it', () => {

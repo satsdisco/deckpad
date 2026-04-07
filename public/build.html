@@ -209,45 +209,57 @@
           </div>
           <button class="onboarding-dismiss" type="button" aria-label="Skip getting started" onclick="dismissFirstVisitPanel()">Skip</button>
         </div>
+        <div class="onboarding-progress" aria-live="polite">
+          <strong class="onboarding-progress-count" id="onboardingProgressCount">0 / 3 complete</strong>
+          <span class="onboarding-progress-copy" id="onboardingPrimaryCopy">Finish these basics and this panel gets out of your way.</span>
+        </div>
         <div class="onboarding-steps" aria-label="Suggested first steps">
-          <div class="onboarding-step">
+          <div class="onboarding-step" id="onboardingTaskProfile">
             <span class="onboarding-step-index">1</span>
             <div class="onboarding-step-copy">
-              <strong>See what is live</strong>
-              <span>Events are the fastest way to understand what is happening right now.</span>
+              <strong>Set up your profile</strong>
+              <span id="onboardingProfileCopy">Add a bio, links, lightning, or availability so people know who you are.</span>
+            </div>
+            <div class="onboarding-step-actions">
+              <span class="onboarding-step-status" id="onboardingProfileStatus">Next</span>
+              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('profile')">Open profile</button>
             </div>
           </div>
-          <div class="onboarding-step">
+          <div class="onboarding-step" id="onboardingTaskProject">
             <span class="onboarding-step-index">2</span>
             <div class="onboarding-step-copy">
-              <strong>Check the work</strong>
-              <span>Projects show what builders have already shipped or are actively making.</span>
+              <strong>Add your first project</strong>
+              <span id="onboardingProjectCopy">Ship something small so people can see what you are building.</span>
+            </div>
+            <div class="onboarding-step-actions">
+              <span class="onboarding-step-status" id="onboardingProjectStatus">Next</span>
+              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('project')">Add project</button>
             </div>
           </div>
-          <div class="onboarding-step">
+          <div class="onboarding-step" id="onboardingTaskExplore">
             <span class="onboarding-step-index">3</span>
             <div class="onboarding-step-copy">
-              <strong>Find your angle</strong>
-              <span>Bounties and the Foyer are where you can jump in when something clicks.</span>
+              <strong>Explore the live flow</strong>
+              <span id="onboardingExploreCopy">Check events, bounties, or the foyer so the weekly rhythm makes sense.</span>
+            </div>
+            <div class="onboarding-step-actions">
+              <span class="onboarding-step-status" id="onboardingExploreStatus">Next</span>
+              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('explore')">Browse build flow</button>
             </div>
           </div>
         </div>
-        <div class="onboarding-primary">
-          <button class="btn btn-primary onboarding-primary-btn" type="button" onclick="handleOnboardingAction('events')">Start with Events</button>
-          <span class="onboarding-primary-copy" id="onboardingPrimaryCopy">Best first move: see what is happening now, who is shipping, and what you can join.</span>
-        </div>
         <div class="onboarding-shortcuts">
-          <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('projects')">
-            <span class="onboarding-shortcut-label">Projects</span>
-            <span class="onboarding-shortcut-copy">Browse what people are building.</span>
+          <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('events')">
+            <span class="onboarding-shortcut-label">Events</span>
+            <span class="onboarding-shortcut-copy">See what is happening now.</span>
           </button>
           <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('bounties')">
             <span class="onboarding-shortcut-label">Bounties</span>
-            <span class="onboarding-shortcut-copy">Find work you can help finish.</span>
+            <span class="onboarding-shortcut-copy">Find work you can jump into.</span>
           </button>
-          <a class="onboarding-shortcut onboarding-shortcut-link" href="/foyer" onclick="dismissFirstVisitPanel()">
+          <a class="onboarding-shortcut onboarding-shortcut-link" href="/foyer" onclick="markOnboardingTaskDone('explore')">
             <span class="onboarding-shortcut-label">The Foyer</span>
-            <span class="onboarding-shortcut-copy">Explore ideas, teams, and momentum.</span>
+            <span class="onboarding-shortcut-copy">Meet ideas, teams, and momentum.</span>
           </a>
         </div>
       </section>
@@ -592,6 +604,8 @@ let countdownTimers = {};
 let currentView = 'events';
 let projectSubmissionContext = { bountyId: '', bountyTitle: '' };
 const FIRST_VISIT_PANEL_KEY = 'lunarpad:first-visit-panel:dismissed:v2';
+const ONBOARDING_PROGRESS_KEY = 'lunarpad:onboarding-progress:v1';
+let onboardingState = { user: null, projectCount: 0, explored: false };
 
 function shouldForceShowFirstVisitPanel() {
   try {
@@ -653,38 +667,122 @@ function dismissFirstVisitPanel() {
   try { localStorage.setItem(FIRST_VISIT_PANEL_KEY, '1'); } catch {}
 }
 
+function readOnboardingProgress() {
+  try {
+    return JSON.parse(localStorage.getItem(ONBOARDING_PROGRESS_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOnboardingProgress(progress) {
+  try { localStorage.setItem(ONBOARDING_PROGRESS_KEY, JSON.stringify(progress || {})); } catch {}
+}
+
+function getOnboardingChecklistState(user = onboardingState.user, projectCount = onboardingState.projectCount) {
+  const progress = readOnboardingProgress();
+  const profileReady = !!(user && (user.bio || user.website_url || user.github_url || user.lightning_address || user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== ''));
+  const hasProject = Number(projectCount || 0) > 0;
+  const explored = !!progress.explored;
+  const completedCount = [profileReady, hasProject, explored].filter(Boolean).length;
+  return { profileReady, hasProject, explored, completedCount, total: 3, allDone: completedCount === 3 };
+}
+
+function renderOnboardingChecklist() {
+  const panel = document.getElementById('firstVisitPanel');
+  if (!panel || !onboardingState.user) return;
+  const state = getOnboardingChecklistState();
+  const progressCount = document.getElementById('onboardingProgressCount');
+  const primaryCopy = document.getElementById('onboardingPrimaryCopy');
+  const profileStatus = document.getElementById('onboardingProfileStatus');
+  const projectStatus = document.getElementById('onboardingProjectStatus');
+  const exploreStatus = document.getElementById('onboardingExploreStatus');
+  const profileCopy = document.getElementById('onboardingProfileCopy');
+  const projectCopy = document.getElementById('onboardingProjectCopy');
+  const exploreCopy = document.getElementById('onboardingExploreCopy');
+  const profileCard = document.getElementById('onboardingTaskProfile');
+  const projectCard = document.getElementById('onboardingTaskProject');
+  const exploreCard = document.getElementById('onboardingTaskExplore');
+  if (progressCount) progressCount.textContent = `${state.completedCount} / ${state.total} complete`;
+  if (primaryCopy) {
+    primaryCopy.textContent = state.allDone
+      ? 'Nice. You have the basics in place now, so this onboarding panel will stop nagging you.'
+      : 'Finish these basics and this panel gets out of your way.';
+  }
+  if (profileStatus) profileStatus.textContent = state.profileReady ? 'Done' : 'Next';
+  if (projectStatus) projectStatus.textContent = state.hasProject ? 'Done' : 'Next';
+  if (exploreStatus) exploreStatus.textContent = state.explored ? 'Done' : 'Next';
+  if (profileCopy) profileCopy.textContent = state.profileReady ? 'Your profile has enough signal now that people can tell who you are.' : 'Add a bio, links, lightning, or availability so people know who you are.';
+  if (projectCopy) projectCopy.textContent = state.hasProject ? `You already have ${onboardingState.projectCount} project${onboardingState.projectCount === 1 ? '' : 's'} on the board.` : 'Ship something small so people can see what you are building.';
+  if (exploreCopy) exploreCopy.textContent = state.explored ? 'Good. You have already poked around the live build flow.' : 'Check events, bounties, or the foyer so the weekly rhythm makes sense.';
+  [
+    [profileCard, state.profileReady],
+    [projectCard, state.hasProject],
+    [exploreCard, state.explored],
+  ].forEach(([el, done]) => {
+    if (!el) return;
+    el.classList.toggle('complete', !!done);
+  });
+  if (state.allDone) {
+    dismissFirstVisitPanel();
+  }
+}
+
 function hydrateFirstVisitPanel(user) {
   const suffix = document.getElementById('onboardingNameSuffix');
-  const primaryCopy = document.getElementById('onboardingPrimaryCopy');
   const rawName = String(user?.name || '').trim();
   const firstName = rawName ? rawName.split(/\s+/)[0] : '';
+  onboardingState.user = user;
   if (suffix) {
     suffix.textContent = firstName ? `, ${firstName}` : '';
   }
-  if (primaryCopy) {
-    primaryCopy.textContent = firstName
-      ? `${firstName}, start with the live feed so you can see what is happening now, who is shipping, and what you can join.`
-      : 'Best first move: see what is happening now, who is shipping, and what you can join.';
-  }
+  renderOnboardingChecklist();
 }
 
 function maybeShowFirstVisitPanel(user) {
   const panel = document.getElementById('firstVisitPanel');
   if (!panel || !user) return;
   const forced = shouldForceShowFirstVisitPanel();
+  const state = getOnboardingChecklistState(user, onboardingState.projectCount);
+  if (!forced && state.allDone) return;
   const hashView = window.location.hash.replace('#', '');
   if (!forced && hashView && hashView !== 'events') return;
   try {
     if (!forced && localStorage.getItem(FIRST_VISIT_PANEL_KEY) === '1') return;
   } catch {}
   panel.hidden = false;
+  renderOnboardingChecklist();
+}
+
+function markOnboardingTaskDone(task) {
+  const progress = readOnboardingProgress();
+  if (task === 'explore') progress.explored = true;
+  writeOnboardingProgress(progress);
+  renderOnboardingChecklist();
 }
 
 function handleOnboardingAction(viewName) {
-  dismissFirstVisitPanel();
+  if (viewName === 'profile') {
+    window.location.href = '/profile';
+    return;
+  }
+  if (viewName === 'project') {
+    switchToView('projects', { resetProjectContext: true });
+    document.getElementById('projectModal').classList.add('open');
+    return;
+  }
+  if (viewName === 'explore') {
+    markOnboardingTaskDone('explore');
+    switchToView('bounties', { resetProjectContext: true });
+    return;
+  }
   if (viewName === 'foyer') {
+    markOnboardingTaskDone('explore');
     window.location.href = '/foyer';
     return;
+  }
+  if (['events', 'projects', 'bounties', 'leaderboard'].includes(viewName)) {
+    markOnboardingTaskDone('explore');
   }
   switchToView(viewName, { resetProjectContext: true });
 }
@@ -1458,6 +1556,8 @@ async function submitProject() {
     document.getElementById('projBountyId').value = '';
     document.getElementById('projBountyLabel').style.display = 'none';
     document.getElementById('projectModal').classList.remove('open');
+    onboardingState.projectCount = Number(onboardingState.projectCount || 0) + 1;
+    renderOnboardingChecklist();
     const res = await fetch('/api/projects');
     renderProjects(await res.json());
   } catch {
@@ -1947,11 +2047,17 @@ if (window.location.hash === '#leaderboard' && !_lbLoaded) {
 }
 </script>
 <script src="/js/auth.js"></script>
-<script>initAuth(function(user) {
+<script>initAuth(async function(user) {
   var bi = document.getElementById('projBuilder');
   if (bi && !bi.value) bi.value = user.name || user.email || '';
   var spk = document.getElementById('spkName');
   if (spk && !spk.value) spk.value = user.name || '';
+  try {
+    const ownProjects = await fetch('/api/users/' + encodeURIComponent(user.id) + '/projects').then(r => r.json());
+    onboardingState.projectCount = Array.isArray(ownProjects) ? ownProjects.length : 0;
+  } catch {
+    onboardingState.projectCount = 0;
+  }
   hydrateFirstVisitPanel(user);
   maybeShowFirstVisitPanel(user);
 });</script>
@@ -1986,80 +2092,3 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape")document.que
         <button class='btn' onclick='if(_bnCropper)_bnCropper.reset()' title='Reset' style='padding:6px 10px;font-size:.8rem'>Reset</button>
       </div>
       <div style='display:flex;gap:8px'>
-        <button class='btn' onclick='closeBannerCrop()'>Cancel</button>
-        <button class='btn btn-primary' id='bannerCropSaveBtn' onclick='saveBannerCrop()'>Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-let _bnCropper = null;
-let _bnProjectId = null;
-
-function triggerBannerUpload(projectId) {
-  _bnProjectId = projectId;
-  const input = document.getElementById('bannerFileInput');
-  input.value = '';
-  input.onchange = function() {
-    if (!this.files[0]) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = document.getElementById('bannerCropImage');
-      img.src = e.target.result;
-      document.getElementById('bannerCropModal').classList.add('open');
-      if (_bnCropper) { _bnCropper.destroy(); _bnCropper = null; }
-      img.onload = () => {
-        _bnCropper = new Cropper(img, {
-          aspectRatio: 16/9,
-          viewMode: 0,
-          dragMode: 'move',
-          cropBoxResizable: true,
-          cropBoxMovable: true,
-          background: true,
-          guides: false,
-          center: true,
-          highlight: false,
-          autoCropArea: 0.8,
-          zoomable: true,
-          zoomOnWheel: true,
-        });
-      };
-    };
-    reader.readAsDataURL(this.files[0]);
-  };
-  input.click();
-}
-
-function closeBannerCrop() {
-  document.getElementById('bannerCropModal').classList.remove('open');
-  if (_bnCropper) { _bnCropper.destroy(); _bnCropper = null; }
-}
-
-async function saveBannerCrop() {
-  if (!_bnCropper || !_bnProjectId) return;
-  const btn = document.getElementById('bannerCropSaveBtn');
-  btn.disabled = true; btn.textContent = 'Saving...';
-  const canvas = _bnCropper.getCroppedCanvas({ maxWidth: 800, maxHeight: 450, fillColor: '#fff' });
-  canvas.toBlob(async (blob) => {
-    const fd = new FormData();
-    fd.append('banner', blob, 'banner.jpg');
-    try {
-      const r = await fetch('/api/projects/' + _bnProjectId + '/banner', { method: 'POST', body: fd });
-      if (r.ok) {
-        const data = await r.json();
-        const card = document.getElementById('proj-' + _bnProjectId);
-        if (card) {
-          const img = card.querySelector('.project-card-visual');
-          if (img) img.src = data.banner_url + '?t=' + Date.now();
-        }
-      } else { alert('Upload failed'); }
-    } catch { alert('Upload failed'); }
-    btn.disabled = false; btn.textContent = 'Save';
-    closeBannerCrop();
-  }, 'image/jpeg', 0.9);
-}
-
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBannerCrop(); });
-</script>
-</body>
-</html>
