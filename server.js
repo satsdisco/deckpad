@@ -3429,6 +3429,13 @@ app.post('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, payload });
 });
 
+app.delete('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  db.prepare("UPDATE speakers SET status = 'scheduled', skipped_at = NULL WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function detectEntryPoint(dir, depth = 0) {

@@ -17,7 +17,7 @@ test('host can restage previously presented speakers for replay/testing', () => 
 test('live lineup lets hosts click presented speakers to replay them', () => {
   const liveHtml = read('public', 'live.html');
 
-  assert.match(liveHtml, /const isReplayable = isAdmin && s\.status !== 'skipped' && s\.status !== 'winner'/);
+  assert.match(liveHtml, /const isReplayable = isAdmin && s\.status !== 'winner'/);
   assert.match(liveHtml, /roleLabel === 'NOW' \? ' active' : ''/);
   assert.match(liveHtml, /setSpeaker\('/);
   assert.match(liveHtml, /status === 'presented'/);

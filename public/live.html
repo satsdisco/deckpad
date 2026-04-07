@@ -720,6 +720,7 @@ body { background: #080a14; overflow: hidden; }
     <button class="btn-live-admin" id="closeVotingBtn" onclick="closeVoting()" style="display:none">Close Final Voting</button>
     <button class="btn-live-admin" id="markPresentedBtn" onclick="markPresented()" style="display:none">Mark Presented</button>
     <button class="btn-live-admin" id="undoPresentedBtn" onclick="undoPresented()" style="display:none">Undo Presented</button>
+    <button class="btn-live-admin" id="undoSkippedBtn" onclick="undoSkipped()" style="display:none">Undo Skip</button>
     <button class="btn-live-admin" id="advanceBtn" onclick="advanceSpeaker()" style="display:none">Advance Queue</button>
     <button class="btn-live-admin danger" id="skipSpeakerBtn" onclick="skipSpeaker()" style="display:none">Skip Speaker</button>
     <button class="btn-live-admin danger" id="stopBtn" onclick="stopSession()" style="display:none">■ End Session</button>
@@ -798,7 +799,7 @@ function renderLineupGroups(data) {
   const finalVotingOpen = data?.session?.status === 'voting' && !data?.speaker;
   const renderSpeaker = (s, roleLabel = '') => {
     const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const isReplayable = isAdmin && s.status !== 'skipped' && s.status !== 'winner';
+    const isReplayable = isAdmin && s.status !== 'winner';
     const statusTag = roleLabel ? `<span class="live-speaker-status-tag">${roleLabel}</span>` : (['presented', 'skipped', 'winner'].includes(s.status) ? `<span class="live-speaker-status-tag">${esc(s.status)}</span>` : '');
     return `
       <div class="live-speaker-item${roleLabel === 'UP NEXT' ? ' status-up-next' : ''}${roleLabel === 'NOW' ? ' active' : ''}${['presented','skipped','winner'].includes(s.status) ? ' status-complete' : ''}" ${isReplayable ? `onclick="setSpeaker('${esc(s.id)}')"` : ''}>
@@ -881,6 +882,7 @@ function renderAdminControls(data) {
   document.getElementById('closeVotingBtn').style.display = finalVotingOpen && votingOpen ? '' : 'none';
   document.getElementById('markPresentedBtn').style.display = active && hasSpeaker ? '' : 'none';
   document.getElementById('undoPresentedBtn').style.display = active && !hasSpeaker && (data?.lineup_groups?.completed || []).some((speaker) => speaker.status === 'presented') ? '' : 'none';
+  document.getElementById('undoSkippedBtn').style.display = active && !hasSpeaker && (data?.lineup_groups?.completed || []).some((speaker) => speaker.status === 'skipped') ? '' : 'none';
   document.getElementById('advanceBtn').style.display = active ? '' : 'none';
   document.getElementById('skipSpeakerBtn').style.display = active && hasSpeaker ? '' : 'none';
   document.getElementById('adminSpeakerHint').textContent = active
@@ -1090,6 +1092,13 @@ async function markPresented() {
 
 async function undoPresented() {
   await hostAction(`/api/live/${eventId}/unmark-presented`);
+}
+
+async function undoSkipped() {
+  const skippedSpeaker = (latestPayload?.lineup_groups?.completed || []).find((speaker) => speaker.status === 'skipped');
+  if (!skippedSpeaker) return;
+  const res = await fetch(`/api/speakers/${skippedSpeaker.id}/skip`, { method: 'DELETE' });
+  if (res.ok) await poll();
 }
 
 async function skipSpeaker() {
