@@ -15,9 +15,9 @@ test('pass 1 adds host control endpoints for voting and queue progression', () =
   assert.match(server, /app\.post\('\/api\/live\/:eventId\/mark-presented'/);
   assert.match(server, /app\.post\('\/api\/speakers\/:id\/skip'/);
   assert.match(server, /status = 'voting'/);
-  assert.match(server, /status = 'winner_pending'/);
+  assert.match(server, /status = 'presentations_complete'|status = 'winner_pending'/);
   assert.match(server, /Live session is not active/);
-  assert.match(server, /No current speaker to open voting for/);
+  assert.match(server, /Final voting can only open after all presentations are complete|No current speaker to open voting for/);
   assert.match(server, /Speaker not found in this event/);
   assert.match(server, /current_started_at = NULL/);
 });

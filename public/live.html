@@ -68,6 +68,17 @@ body { background: #080a14; overflow: hidden; }
   align-items: center;
   gap: 10px;
 }
+.live-toolbar-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.live-status-detail {
+  font-size: 0.72rem;
+  color: var(--muted2);
+  max-width: 320px;
+  text-align: right;
+}
 .live-state-pill {
   display: inline-flex;
   align-items: center;
@@ -376,6 +387,31 @@ body { background: #080a14; overflow: hidden; }
   color: var(--muted2);
   flex-shrink: 0;
 }
+.live-speaker-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.live-inline-vote-btn {
+  border: 1px solid rgba(124,92,252,0.25);
+  background: rgba(124,92,252,0.12);
+  color: #d9d0ff;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.live-inline-vote-btn:hover { background: rgba(124,92,252,0.2); }
+.live-inline-vote-btn.voted {
+  border-color: rgba(67, 201, 120, 0.32);
+  background: rgba(67, 201, 120, 0.14);
+  color: #9bf2bc;
+}
+.live-inline-vote-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Bottom info bar (current speaker) ── */
 .live-info-bar {
@@ -432,6 +468,46 @@ body { background: #080a14; overflow: hidden; }
   font-weight: 800;
   color: var(--text);
 }
+.live-final-voting-panel {
+  display: none;
+  padding: 16px 20px 20px;
+  background: rgba(9, 11, 20, 0.94);
+  border-top: 1px solid rgba(124,92,252,0.12);
+  gap: 14px;
+  flex-direction: column;
+}
+.live-final-voting-panel.visible { display: flex; }
+.live-final-voting-copy h3 {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+.live-final-voting-copy p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.live-final-voting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.live-final-vote-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.live-final-vote-meta {
+  font-size: 0.74rem;
+  color: var(--muted2);
+}
+.live-final-vote-button {
+  align-self: flex-start;
+}
 
 /* ── Admin controls ── */
 .live-admin-bar {
@@ -472,51 +548,6 @@ body { background: #080a14; overflow: hidden; }
 .btn-live-admin.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-live-admin.primary:hover { background: var(--accent-hover); }
 
-/* ── Waiting screen ── */
-.live-waiting {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  background: #080a14;
-}
-.live-waiting-logo {
-  font-family: var(--font-mono);
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: var(--text);
-  letter-spacing: -0.03em;
-}
-.live-waiting-logo span { color: var(--accent); }
-.live-waiting-sub {
-  font-size: 0.9rem;
-  color: var(--muted);
-  text-align: center;
-}
-.live-waiting-dots span {
-  animation: blink 1.4s infinite;
-  opacity: 0;
-}
-.live-waiting-dots span:nth-child(2) { animation-delay: 0.2s; }
-.live-waiting-dots span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes blink {
-  0%, 80%, 100% { opacity: 0; }
-  40% { opacity: 1; }
-}
-.live-qr-area {
-  text-align: center;
-}
-.live-qr-label {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--muted2);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 10px;
-}
 .live-qr-url {
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -575,7 +606,10 @@ body { background: #080a14; overflow: hidden; }
       <span id="liveStatus">Connecting...</span>
     </div>
     <div class="live-top-meta">
-      <div class="live-state-pill offline" id="sessionStatePill">Connecting</div>
+      <div class="live-toolbar-status">
+        <div class="live-state-pill offline" id="sessionStatePill">Connecting</div>
+        <div class="live-status-detail" id="liveStatusDetail">Checking the stage…</div>
+      </div>
       <div class="live-event-name" id="liveEventName">—</div>
     </div>
   </div>
@@ -612,19 +646,6 @@ body { background: #080a14; overflow: hidden; }
         </div>
       </div>
 
-      <!-- Waiting for session -->
-      <div class="live-waiting" id="waitingScreen">
-        <div class="live-waiting-logo">Lunar<span>\Pad</span></div>
-        <div class="live-waiting-sub">
-          Waiting for the event to start
-          <div class="live-waiting-dots"><span>.</span><span>.</span><span>.</span></div>
-        </div>
-        <div class="live-qr-area">
-          <div class="live-qr-label">Join the audience</div>
-          <div class="live-qr-url" id="joinUrl">—</div>
-        </div>
-      </div>
-
       <!-- Offline screen -->
       <div class="live-offline" id="offlineScreen" style="display:none">
         <div style="font-size:3rem">🌙</div>
@@ -638,6 +659,7 @@ body { background: #080a14; overflow: hidden; }
         <div class="live-no-deck-icon">🎤</div>
         <h2 id="noDeckName">Up next...</h2>
         <p id="noDeckProject"></p>
+        <div class="live-qr-url" id="joinUrl">—</div>
       </div>
 
       <!-- The actual deck -->
@@ -666,12 +688,20 @@ body { background: #080a14; overflow: hidden; }
     </div>
   </div>
 
+  <div class="live-final-voting-panel" id="finalVotingPanel">
+    <div class="live-final-voting-copy">
+      <h3 id="finalVotingHeading">All presentations complete</h3>
+      <p id="finalVotingSubcopy">The host can open final voting when the room is ready.</p>
+    </div>
+    <div class="live-final-voting-grid" id="finalVotingGrid"></div>
+  </div>
+
   <!-- Admin controls -->
   <div class="live-admin-bar" id="adminBar">
     <span class="live-admin-label">Host controls:</span>
     <button class="btn-live-admin primary" id="startBtn" onclick="startSession()" style="display:none">▶ Start Session</button>
-    <button class="btn-live-admin" id="openVotingBtn" onclick="openVoting()" style="display:none">Open Voting</button>
-    <button class="btn-live-admin" id="closeVotingBtn" onclick="closeVoting()" style="display:none">Close Voting</button>
+    <button class="btn-live-admin" id="openVotingBtn" onclick="openVoting()" style="display:none">Open Final Voting</button>
+    <button class="btn-live-admin" id="closeVotingBtn" onclick="closeVoting()" style="display:none">Close Final Voting</button>
     <button class="btn-live-admin" id="markPresentedBtn" onclick="markPresented()" style="display:none">Mark Presented</button>
     <button class="btn-live-admin" id="advanceBtn" onclick="advanceSpeaker()" style="display:none">Advance Queue</button>
     <button class="btn-live-admin danger" id="skipSpeakerBtn" onclick="skipSpeaker()" style="display:none">Skip Speaker</button>
@@ -688,27 +718,41 @@ let currentSpeakerId = null;
 let isAdmin = false;
 let speakers = [];
 let latestPayload = null;
+let finalVoteState = {};
 
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
 
 function formatSessionState(data) {
   if (!data?.active) return { label: 'Offline', tone: 'offline' };
   const status = data.session?.status || 'live';
+  if (status === 'voting' && !data?.speaker) return { label: 'Final Voting', tone: 'voting' };
   if (status === 'voting') return { label: 'Voting Open', tone: 'voting' };
+  if (status === 'presentations_complete') return { label: 'Presentations Complete', tone: 'pending' };
   if (status === 'winner_pending') return { label: 'Winner Pending', tone: 'pending' };
   if (status === 'completed') return { label: 'Event Complete', tone: 'offline' };
+  if (!data?.speaker) return { label: 'Waiting', tone: 'pending' };
   return { label: 'Live Now', tone: 'live' };
+}
+
+function formatToolbarDetail(data) {
+  if (!data?.active) return 'The stage opens when the host starts the session.';
+  if (data?.session?.status === 'voting' && !data?.speaker) return 'Voting is now open for the full event.';
+  if (data?.session?.status === 'presentations_complete') return 'All presenters are done. Final voting is next.';
+  if (!data?.speaker) return data?.next_speaker ? `Waiting for next presenter · ${data.next_speaker.name} is up next.` : 'Waiting for next presenter';
+  return data?.session?.voting_open ? 'Audience voting is open for the current speaker.' : 'Presentation is live on stage.';
 }
 
 function setStatus(active, data = null) {
   const dot = document.getElementById('liveDot');
   const status = document.getElementById('liveStatus');
   const pill = document.getElementById('sessionStatePill');
+  const detail = document.getElementById('liveStatusDetail');
   const state = formatSessionState(data || { active });
   dot.style.background = active ? '#ff4d4d' : '#666';
   status.textContent = active ? state.label : 'Offline';
   pill.textContent = state.label;
   pill.className = `live-state-pill ${state.tone}`;
+  detail.textContent = formatToolbarDetail(data || { active });
 }
 
 function renderTimer(data) {
@@ -734,6 +778,7 @@ function renderLineupGroups(data) {
   const current = document.getElementById('lineupCurrent');
   const upcoming = document.getElementById('lineupUpcoming');
   const completed = document.getElementById('lineupCompleted');
+  const finalVotingOpen = data?.session?.status === 'voting' && !data?.speaker;
   const renderSpeaker = (s, roleLabel = '') => {
     const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     const isClickable = isAdmin && !['presented', 'skipped', 'winner'].includes(s.status);
@@ -746,7 +791,7 @@ function renderLineupGroups(data) {
           <div class="live-speaker-project">${esc(s.project_title || s.project || '')}</div>
         </div>
         ${statusTag}
-        <span class="live-votes-badge">▲${Number(s.votes || 0).toLocaleString()}</span>
+        ${finalVotingOpen && s.status !== 'skipped' ? `<div class="live-speaker-actions"><span class="live-votes-badge">▲${Number(finalVoteState?.[s.id]?.votes ?? s.votes ?? 0).toLocaleString()}</span><button class="live-inline-vote-btn${finalVoteState?.[s.id]?.voted ? ' voted' : ''}" onclick="event.stopPropagation(); voteForSpeaker('${esc(s.id)}')">${finalVoteState?.[s.id]?.voted ? '✓ Voted' : 'Vote'}</button></div>` : `<span class="live-votes-badge">▲${Number(s.votes || 0).toLocaleString()}</span>`}
       </div>`;
   };
   current.innerHTML = (data?.lineup_groups?.current || []).map((s) => renderSpeaker(s, 'NOW')).join('') || '<div class="live-next-up">Awaiting next presenter.</div>';
@@ -757,17 +802,53 @@ function renderLineupGroups(data) {
 function renderStageMeta(data) {
   const spk = data?.speaker;
   const state = formatSessionState(data);
-  document.getElementById('stageHeading').textContent = spk ? `${spk.name} — ${spk.project_title || spk.project || 'Untitled'}` : 'Waiting for the next presenter';
+  document.getElementById('stageHeading').textContent = spk ? `${spk.name} — ${spk.project_title || spk.project || 'Untitled'}` : (data?.session?.status === 'presentations_complete' ? 'All presentations complete' : (data?.session?.status === 'voting' && !spk ? 'Final voting is live' : 'Waiting for the next presenter'));
   document.getElementById('stageSubcopy').textContent = spk
-    ? (data.session?.voting_open ? 'Audience voting is open. Keep the flow tight and let the scoreboard move.' : 'Speaker is live on stage. Host controls the voting window and queue from here.')
-    : (data?.active ? 'No presenter is currently on stage. Pick the next builder from the lineup.' : 'The stage opens when the host starts the session.');
+    ? (data.session?.voting_open ? 'Audience voting is open. Keep the flow tight and let the scoreboard move.' : 'Speaker is live on stage. Host controls the queue from here while voting stays held until the event ends.')
+    : (data?.session?.status === 'presentations_complete' ? 'Every presenter has finished. Hold the room here, then open final voting when ready.' : (data?.session?.status === 'voting' ? 'Voting is now open for the full event. Audience members can cast with full context.' : (data?.active ? 'No presenter is currently on stage. Keep the state compact in the toolbar and pick the next builder from the lineup.' : 'The stage opens when the host starts the session.')));
   document.getElementById('nextSpeakerText').textContent = data?.next_speaker
     ? `Next up: ${data.next_speaker.name} — ${data.next_speaker.project_title || data.next_speaker.project || 'Untitled'}`
     : (data?.active ? `Next up: none yet — ${state.label}` : 'Next up: —');
   document.getElementById('sessionVotes').textContent = Number(data?.scoreboard?.total_votes || 0).toLocaleString();
   document.getElementById('sessionZaps').textContent = Number(data?.scoreboard?.total_zaps || 0).toLocaleString();
-  document.getElementById('deckStatusNote').textContent = !spk ? 'Awaiting next presenter.' : (spk?.deck_id && spk?.entry_point ? 'Deck is live on stage.' : 'Deck missing — fallback stage summary is carrying the flow.');
+  document.getElementById('deckStatusNote').textContent = !spk ? (data?.session?.status === 'voting' ? 'Final voting is open.' : (data?.session?.status === 'presentations_complete' ? 'All decks are finished. Ready final voting when the room is set.' : 'Awaiting next presenter.')) : (spk?.deck_id && spk?.entry_point ? 'Deck is live on stage.' : 'Deck missing — fallback stage summary is carrying the flow.');
   renderTimer(data);
+}
+
+async function loadFinalVotingState(data = latestPayload) {
+  const finalCandidates = (data?.speakers || []).filter((speaker) => speaker.status !== 'skipped');
+  if (!(data?.session?.status === 'voting' && !data?.speaker) || !finalCandidates.length) {
+    finalVoteState = {};
+    return;
+  }
+  const ids = finalCandidates.map((speaker) => speaker.id).join(',');
+  try {
+    finalVoteState = await fetch(`/api/vote/check?type=speaker&ids=${encodeURIComponent(ids)}`).then(r => r.json());
+  } catch {
+    finalVoteState = Object.fromEntries(finalCandidates.map((speaker) => [speaker.id, { votes: Number(speaker.votes || 0), voted: false }]));
+  }
+}
+
+function renderFinalVoting(data) {
+  const panel = document.getElementById('finalVotingPanel');
+  const grid = document.getElementById('finalVotingGrid');
+  const heading = document.getElementById('finalVotingHeading');
+  const subcopy = document.getElementById('finalVotingSubcopy');
+  const isPresentationsComplete = data?.session?.status === 'presentations_complete';
+  const isFinalVotingOpen = data?.session?.status === 'voting' && !data?.speaker;
+  if (!(isPresentationsComplete || isFinalVotingOpen)) {
+    panel.classList.remove('visible');
+    grid.innerHTML = '';
+    return;
+  }
+  const candidates = (data?.speakers || []).filter((speaker) => speaker.status !== 'skipped');
+  heading.textContent = isFinalVotingOpen ? 'Voting is now open' : 'All presentations complete';
+  subcopy.textContent = isFinalVotingOpen ? 'Now people can vote with full context across the whole event.' : 'Hold voting until the room is ready. Then open one final voting window for everyone.';
+  grid.innerHTML = candidates.map((speaker) => {
+    const voteState = finalVoteState?.[speaker.id] || { votes: Number(speaker.votes || 0), voted: false };
+    return `<div class="live-final-vote-card"><div><div class="live-current-name">${esc(speaker.name)}</div><div class="live-current-project">${esc(speaker.project_title || speaker.project || 'Untitled')}</div></div><div class="live-final-vote-meta">▲ ${Number(voteState.votes || 0).toLocaleString()} votes</div><button class="live-vote-btn live-final-vote-button${voteState.voted ? ' voted' : ''}${isFinalVotingOpen ? '' : ' closed'}" ${isFinalVotingOpen ? '' : 'disabled'} onclick="voteForSpeaker('${esc(speaker.id)}')">${isFinalVotingOpen ? (voteState.voted ? '✓ Voted' : 'Vote') : 'Voting Closed'}</button></div>`;
+  }).join('') || '<div class="live-next-up">No eligible presenters yet.</div>';
+  panel.classList.add('visible');
 }
 
 function renderAdminControls(data) {
@@ -775,15 +856,17 @@ function renderAdminControls(data) {
   const active = !!data?.active;
   const hasSpeaker = !!data?.speaker;
   const votingOpen = !!data?.session?.voting_open;
+  const finalVotingReady = data?.session?.status === 'presentations_complete';
+  const finalVotingOpen = data?.session?.status === 'voting' && !hasSpeaker;
   document.getElementById('startBtn').style.display = active ? 'none' : '';
   document.getElementById('stopBtn').style.display = active ? '' : 'none';
-  document.getElementById('openVotingBtn').style.display = active && hasSpeaker && !votingOpen ? '' : 'none';
-  document.getElementById('closeVotingBtn').style.display = active && votingOpen ? '' : 'none';
+  document.getElementById('openVotingBtn').style.display = finalVotingReady ? '' : 'none';
+  document.getElementById('closeVotingBtn').style.display = finalVotingOpen && votingOpen ? '' : 'none';
   document.getElementById('markPresentedBtn').style.display = active && hasSpeaker ? '' : 'none';
   document.getElementById('advanceBtn').style.display = active ? '' : 'none';
   document.getElementById('skipSpeakerBtn').style.display = active && hasSpeaker ? '' : 'none';
   document.getElementById('adminSpeakerHint').textContent = active
-    ? (hasSpeaker ? 'Run the live queue from here — voting, completion, and skips stay explicit.' : 'Click a speaker in the list to put them on stage.')
+    ? (hasSpeaker ? 'Run the live queue from here — no per-speaker voting prompts, just the presentation flow.' : (finalVotingReady ? 'All presentations are complete. Open one final voting window when ready.' : (finalVotingOpen ? 'Final voting is live. Close it when you are ready to pick a winner.' : 'Click a speaker in the list to put them on stage.')))
     : 'Start the session when the room is ready.';
 }
 
@@ -805,6 +888,7 @@ async function poll() {
   try {
     const data = await fetch('/api/live/' + eventId).then(r => r.json());
     latestPayload = data;
+    await loadFinalVotingState(data);
     render(data);
   } catch {
     latestPayload = null;
@@ -816,13 +900,13 @@ function render(data) {
   latestPayload = data;
   renderStageMeta(data);
   renderAdminControls(data);
+  renderFinalVoting(data);
 
   if (!data.active) {
     setStatus(false, data);
-    document.getElementById('waitingScreen').style.display = data.event ? 'none' : 'flex';
     document.getElementById('offlineScreen').style.display = data.event ? 'flex' : 'none';
     document.getElementById('liveFrame').style.display = 'none';
-    document.getElementById('noDeckScreen').style.display = 'none';
+    document.getElementById('noDeckScreen').style.display = data.event ? 'none' : 'flex';
     document.getElementById('infoBar').style.display = 'none';
     currentSpeakerId = null;
     return;
@@ -849,8 +933,9 @@ function render(data) {
   } else {
     document.getElementById('infoBar').style.display = 'none';
     document.getElementById('liveFrame').style.display = 'none';
-    document.getElementById('noDeckScreen').style.display = 'none';
-    document.getElementById('waitingScreen').style.display = 'flex';
+    document.getElementById('noDeckScreen').style.display = 'flex';
+    document.getElementById('noDeckName').textContent = data?.session?.status === 'voting' ? 'Final voting is live' : (data?.session?.status === 'presentations_complete' ? 'All presentations complete' : 'Awaiting next presenter');
+    document.getElementById('noDeckProject').textContent = data?.session?.status === 'voting' ? 'Use the vote cards below or in the lineup to cast with full context.' : (data?.next_speaker ? `${data.next_speaker.name} is up next.` : 'The toolbar carries the waiting state so the stage stays clear.');
     document.getElementById('offlineScreen').style.display = 'none';
     currentSpeakerId = null;
   }
@@ -859,10 +944,8 @@ function render(data) {
 function loadSpeakerDeck(spk) {
   const frame = document.getElementById('liveFrame');
   const noDeck = document.getElementById('noDeckScreen');
-  const waiting = document.getElementById('waitingScreen');
   const offline = document.getElementById('offlineScreen');
 
-  waiting.style.display = 'none';
   offline.style.display = 'none';
 
   if (spk.deck_id && spk.entry_point) {
@@ -896,22 +979,43 @@ async function vote() {
   const btn = document.getElementById('voteBtn');
   if (btn.disabled) return;
   btn.disabled = true;
+  await voteForSpeaker(currentSpeakerId, { updateCurrentBar: true });
+}
+
+async function voteForSpeaker(speakerId) {
+  const options = arguments[1] || {};
+  const releaseCurrentVoteButton = () => {
+    if (!options.updateCurrentBar || speakerId !== currentSpeakerId) return;
+    document.getElementById('voteBtn').disabled = false;
+  };
+  if (!speakerId) {
+    releaseCurrentVoteButton();
+    return;
+  }
   try {
     const res = await fetch('/api/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'speaker', id: currentSpeakerId }),
+      body: JSON.stringify({ type: 'speaker', id: speakerId }),
     });
     const data = await res.json();
     if (!res.ok) {
-      btn.textContent = data.error || 'Vote unavailable';
+      document.getElementById('adminSpeakerHint').textContent = data.error || 'Vote unavailable';
+      releaseCurrentVoteButton();
       return;
     }
-    document.getElementById('voteCount').textContent = data.votes || 0;
-    btn.classList.toggle('voted', !!data.voted);
-    btn.textContent = data.voted ? '✓ Voted' : 'Vote';
-  } catch {}
-  btn.disabled = false;
+    finalVoteState[speakerId] = { votes: Number(data.votes || 0), voted: !!data.voted };
+    if (options.updateCurrentBar && speakerId === currentSpeakerId) {
+      document.getElementById('voteCount').textContent = data.votes || 0;
+      const btn = document.getElementById('voteBtn');
+      btn.classList.toggle('voted', !!data.voted);
+      btn.textContent = data.voted ? '✓ Voted' : 'Vote';
+      btn.disabled = false;
+    }
+    render(latestPayload || {});
+  } catch {
+    releaseCurrentVoteButton();
+  }
 }
 
 async function hostAction(path, options = {}) {

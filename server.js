@@ -2960,13 +2960,18 @@ app.post('/api/vote', requireAuth, (req, res) => {
   }
   if (type === 'speaker') {
     const speakerVotingState = db.prepare(`
-      SELECT ls.voting_open, ls.is_active, ls.current_speaker_id
+      SELECT ls.voting_open, ls.is_active, ls.current_speaker_id, ls.status, COALESCE(s.status, 'scheduled') AS speaker_status
       FROM speakers s
       LEFT JOIN live_sessions ls ON ls.event_id = s.event_id
       WHERE s.id = ?
     `).get(id);
     if (speakerVotingState?.is_active) {
-      const votingAllowed = Number(speakerVotingState.voting_open || 0) && speakerVotingState.current_speaker_id === id;
+      const currentSpeakerVoting = Number(speakerVotingState.voting_open || 0) && speakerVotingState.current_speaker_id === id;
+      const finalVotingSession = speakerVotingState.status === 'voting' && !speakerVotingState.current_speaker_id;
+      const finalVotingOpen = Number(speakerVotingState.voting_open || 0)
+        && finalVotingSession
+        && speakerVotingState.speaker_status !== 'skipped';
+      const votingAllowed = finalVotingOpen;
       if (!votingAllowed) {
         return res.status(409).json({ error: 'Voting is closed for this speaker right now' });
       }
@@ -3197,8 +3202,29 @@ function getLiveSessionPayload(eventId) {
 
   const nowMs = Date.now();
   let time_remaining_seconds = null;
-  let stage_status_label = session?.status === 'voting' ? 'Voting Open' : (session?.status === 'winner_pending' ? 'Winner Pending' : (session?.is_active ? 'Live Now' : 'Offline'));
-  let time_remaining_label = stage_status_label === 'Winner Pending' ? 'Winner Pending' : 'Awaiting next presenter';
+  let stage_status_label = 'Offline';
+  let time_remaining_label = 'Awaiting next presenter';
+  if (session?.is_active) {
+    if (session?.status === 'voting' && !session?.current_speaker_id) {
+      stage_status_label = 'Voting is now open';
+      time_remaining_label = 'Cast your votes before winner selection';
+    } else if (session?.status === 'presentations_complete') {
+      stage_status_label = 'All Presentations Complete';
+      time_remaining_label = 'Host can open final voting when ready';
+    } else if (session?.status === 'winner_pending') {
+      stage_status_label = 'Winner Pending';
+      time_remaining_label = 'Winner Pending';
+    } else if (!current) {
+      stage_status_label = 'Waiting for next presenter';
+      time_remaining_label = 'Awaiting next presenter';
+    } else if (session?.status === 'voting') {
+      stage_status_label = 'Voting Open';
+      time_remaining_label = 'Audience voting is live';
+    } else {
+      stage_status_label = 'Live Now';
+      time_remaining_label = 'Awaiting next presenter';
+    }
+  }
   if (current && session?.current_started_at) {
     const startMs = Date.parse(session.current_started_at + 'Z');
     const durationSeconds = Number(session.current_duration_minutes || 10) * 60;
@@ -3297,7 +3323,9 @@ app.post('/api/live/:eventId/speaker', requireAuth, requireAdmin, (req, res) => 
 app.post('/api/live/:eventId/open-voting', requireAuth, requireAdmin, (req, res) => {
   const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
   if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
-  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to open voting for' });
+  if (activeSession.current_speaker_id || activeSession.status !== 'presentations_complete') {
+    return res.status(409).json({ error: 'Final voting can only open after all presentations are complete' });
+  }
   db.prepare("UPDATE live_sessions SET voting_open = 1, status = 'voting', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });
@@ -3306,8 +3334,8 @@ app.post('/api/live/:eventId/open-voting', requireAuth, requireAdmin, (req, res)
 app.post('/api/live/:eventId/close-voting', requireAuth, requireAdmin, (req, res) => {
   const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
   if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
-  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to close voting for' });
-  db.prepare("UPDATE live_sessions SET voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  if (!Number(activeSession.voting_open || 0)) return res.status(409).json({ error: 'Final voting is not open' });
+  db.prepare("UPDATE live_sessions SET voting_open = 0, status = 'presentations_complete', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });
 });
@@ -3332,7 +3360,7 @@ app.post('/api/live/:eventId/advance', requireAuth, requireAdmin, (req, res) => 
     db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?")
       .run(nextSpeaker.id, req.params.eventId);
   } else {
-    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'winner_pending', updated_at = datetime('now') WHERE event_id = ?")
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'presentations_complete', updated_at = datetime('now') WHERE event_id = ?")
       .run(req.params.eventId);
   }
 
@@ -3351,7 +3379,9 @@ app.post('/api/live/:eventId/mark-presented', requireAuth, requireAdmin, (req, r
   db.prepare("UPDATE speakers SET presented_at = COALESCE(presented_at, datetime('now')), status = 'presented' WHERE id = ?").run(currentSpeaker.id);
   if (currentSpeaker.user_id) checkAndAwardBadges(currentSpeaker.user_id);
   resetSpeakerStatusesForSession(req.params.eventId);
-  db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  const remainingSpeaker = getNextQueueSpeaker(req.params.eventId, currentSpeaker.id);
+  const nextStatus = remainingSpeaker ? 'live' : 'presentations_complete';
+  db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = ?, updated_at = datetime('now') WHERE event_id = ?").run(nextStatus, req.params.eventId);
 
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });
@@ -3364,7 +3394,9 @@ app.post('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
   if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
   db.prepare("UPDATE speakers SET status = 'skipped', skipped_at = COALESCE(skipped_at, datetime('now')) WHERE id = ?").run(req.params.id);
   if (activeSession.current_speaker_id === req.params.id) {
-    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(speaker.event_id);
+    const remainingSpeaker = getNextQueueSpeaker(speaker.event_id, req.params.id);
+    const nextStatus = remainingSpeaker ? 'live' : 'presentations_complete';
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = ?, updated_at = datetime('now') WHERE event_id = ?").run(nextStatus, speaker.event_id);
   }
   const payload = getLiveSessionPayload(speaker.event_id);
   res.json({ ok: true, payload });
