@@ -1605,7 +1605,7 @@ a:hover { color: var(--accent); }
     border-bottom: 1px solid var(--border);
   }
   .build-sidebar-shell {
-    padding: 10px 1rem 12px;
+    padding: 4px 1rem 8px;
     border: none;
     border-radius: 0;
     background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(124,92,252,0.03));
@@ -1653,7 +1653,7 @@ a:hover { color: var(--accent); }
     color: #fff;
     font-weight: 700;
   }
-  .build-content { padding: 20px 1rem 0; }
+  .build-content { padding: 12px 1rem 0; }
 
   /* Header */
   .header {
@@ -1663,10 +1663,10 @@ a:hover { color: var(--accent); }
       'brand actions'
       'tabs tabs';
     align-items: center;
-    gap: 8px 12px;
+    gap: 6px 12px;
     padding: 8px 1rem 0;
     height: auto;
-    min-height: 74px;
+    min-height: 70px;
   }
   .logo {
     grid-area: brand;
@@ -1682,7 +1682,7 @@ a:hover { color: var(--accent); }
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    padding: 0 0 8px;
+    padding: 0 0 4px;
     mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
   }
   .nav-tabs::-webkit-scrollbar { display: none; }
@@ -1937,8 +1937,8 @@ a:hover { color: var(--accent); }
     left: 8px;
     right: 8px;
   }
-  .build-sidebar { top: 70px; }
-  .build-sidebar-shell { padding: 8px 0.75rem 10px; }
+  .build-sidebar { top: 66px; }
+  .build-sidebar-shell { padding: 4px 0.75rem 8px; }
   .sidebar-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
@@ -1951,7 +1951,7 @@ a:hover { color: var(--accent); }
     border-radius: 12px;
   }
   .sidebar-link-label { font-size: 0.76rem; }
-  .build-content { padding: 18px 0.75rem 0; }
+  .build-content { padding: 12px 0.75rem 0; }
   .section-header { flex-direction: column; gap: 8px; }
   .speaker-grid, .project-grid { grid-template-columns: 1fr; }
   .event-hero { padding: 16px; }
