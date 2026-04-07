@@ -2958,6 +2958,20 @@ app.post('/api/vote', requireAuth, (req, res) => {
   if (!['deck', 'speaker', 'project', 'comment', 'idea'].includes(type) || !id) {
     return res.status(400).json({ error: 'type (deck|speaker|project|comment) and id required' });
   }
+  if (type === 'speaker') {
+    const speakerVotingState = db.prepare(`
+      SELECT ls.voting_open, ls.is_active, ls.current_speaker_id
+      FROM speakers s
+      LEFT JOIN live_sessions ls ON ls.event_id = s.event_id
+      WHERE s.id = ?
+    `).get(id);
+    if (speakerVotingState?.is_active) {
+      const votingAllowed = Number(speakerVotingState.voting_open || 0) && speakerVotingState.current_speaker_id === id;
+      if (!votingAllowed) {
+        return res.status(409).json({ error: 'Voting is closed for this speaker right now' });
+      }
+    }
+  }
   const voter = req.user ? req.user.id : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
   const existing = stmts.hasVoted.get(type, id, voter);
   if (existing) {
@@ -3127,6 +3141,28 @@ function getOrderedEventSpeakers(eventId) {
   }));
 }
 
+function getNextQueueSpeaker(eventId, currentSpeakerId = null) {
+  const speakers = getOrderedEventSpeakers(eventId);
+  const currentIndex = currentSpeakerId ? speakers.findIndex((speaker) => speaker.id === currentSpeakerId) : -1;
+  const afterCurrent = currentIndex >= 0 ? speakers.slice(currentIndex + 1) : speakers;
+  const fallback = currentIndex >= 0 ? speakers.slice(0, currentIndex) : [];
+  const candidates = [...afterCurrent, ...fallback];
+  return candidates.find((speaker) => !['presented', 'skipped', 'winner', 'live'].includes(speaker.status)) || null;
+}
+
+function resetSpeakerStatusesForSession(eventId, liveSpeakerId = null) {
+  const speakers = getOrderedEventSpeakers(eventId);
+  for (const speaker of speakers) {
+    if (['presented', 'skipped', 'winner'].includes(speaker.status)) continue;
+    const nextStatus = speaker.id === liveSpeakerId ? 'live' : 'scheduled';
+    db.prepare('UPDATE speakers SET status = ? WHERE id = ?').run(nextStatus, speaker.id);
+  }
+}
+
+function getActiveLiveSessionOrNull(eventId) {
+  return db.prepare('SELECT * FROM live_sessions WHERE event_id = ? AND is_active = 1').get(eventId) || null;
+}
+
 function getLiveSessionPayload(eventId) {
   const event = db.prepare('SELECT id, name, description, event_type as type, virtual_link FROM events WHERE id = ?').get(eventId);
   if (!event) return null;
@@ -3157,9 +3193,7 @@ function getLiveSessionPayload(eventId) {
   const current = session?.current_speaker_id
     ? speakers.find((speaker) => speaker.id === session.current_speaker_id) || null
     : null;
-  const next_speaker = current
-    ? speakers.find((speaker) => speaker.id !== current.id && !['presented', 'skipped', 'winner'].includes(speaker.status)) || null
-    : speakers.find((speaker) => !['presented', 'skipped', 'winner'].includes(speaker.status)) || null;
+  const next_speaker = getNextQueueSpeaker(eventId, session?.current_speaker_id || null);
 
   const scoreboard = {
     total_votes: speakers.reduce((sum, speaker) => sum + Number(speaker.votes || 0), 0),
@@ -3198,16 +3232,18 @@ app.post('/api/live/:eventId/start', requireAuth, requireAdmin, (req, res) => {
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const existing = db.prepare('SELECT id FROM live_sessions WHERE event_id = ?').get(req.params.eventId);
   if (existing) {
-    db.prepare("UPDATE live_sessions SET is_active = 1, status = 'live', voting_open = 0, ended_at = NULL, meet_url = COALESCE(meet_url, ?), updated_at = datetime('now') WHERE event_id = ?").run(event.virtual_link || null, req.params.eventId);
+    db.prepare("UPDATE live_sessions SET is_active = 1, current_speaker_id = NULL, current_started_at = NULL, status = 'live', voting_open = 0, ended_at = NULL, meet_url = COALESCE(meet_url, ?), updated_at = datetime('now') WHERE event_id = ?").run(event.virtual_link || null, req.params.eventId);
   } else {
     db.prepare("INSERT INTO live_sessions (id, event_id, is_active, mode, status, voting_open, payout_status, meet_url) VALUES (?, ?, 1, 'demo-day-live', 'live', 0, 'pending', ?)").run(crypto.randomUUID(), req.params.eventId, event.virtual_link || null);
   }
+  resetSpeakerStatusesForSession(req.params.eventId);
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });
 });
 
 // POST /api/live/:eventId/stop — admin ends live session
 app.post('/api/live/:eventId/stop', requireAuth, requireAdmin, (req, res) => {
+  resetSpeakerStatusesForSession(req.params.eventId);
   db.prepare("UPDATE live_sessions SET is_active = 0, current_speaker_id = NULL, voting_open = 0, status = 'completed', ended_at = datetime('now'), updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
   const payload = getLiveSessionPayload(req.params.eventId);
   res.json({ ok: true, payload });
@@ -3216,8 +3252,91 @@ app.post('/api/live/:eventId/stop', requireAuth, requireAdmin, (req, res) => {
 // POST /api/live/:eventId/speaker — admin sets current speaker
 app.post('/api/live/:eventId/speaker', requireAuth, requireAdmin, (req, res) => {
   const { speaker_id } = req.body;
-  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(speaker_id || null, req.params.eventId);
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (speaker_id) {
+    const speaker = db.prepare('SELECT id FROM speakers WHERE id = ? AND event_id = ?').get(speaker_id, req.params.eventId);
+    if (!speaker) return res.status(404).json({ error: 'Speaker not found in this event' });
+    resetSpeakerStatusesForSession(req.params.eventId, speaker_id);
+  }
+  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), status = 'live', voting_open = 0, updated_at = datetime('now') WHERE event_id = ?").run(speaker_id || null, req.params.eventId);
   const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/open-voting', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to open voting for' });
+  db.prepare("UPDATE live_sessions SET voting_open = 1, status = 'voting', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/close-voting', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to close voting for' });
+  db.prepare("UPDATE live_sessions SET voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/advance', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  const payload = getLiveSessionPayload(req.params.eventId);
+  if (!payload?.session) return res.status(404).json({ error: 'Live session not found' });
+
+  if (payload.session.current_speaker_id) {
+    const currentSpeaker = db.prepare('SELECT id, user_id FROM speakers WHERE id = ? AND event_id = ?').get(payload.session.current_speaker_id, req.params.eventId);
+    if (currentSpeaker) {
+      db.prepare("UPDATE speakers SET presented_at = COALESCE(presented_at, datetime('now')), status = 'presented' WHERE id = ?").run(currentSpeaker.id);
+      if (currentSpeaker.user_id) checkAndAwardBadges(currentSpeaker.user_id);
+    }
+  }
+
+  const nextSpeaker = getNextQueueSpeaker(req.params.eventId, payload.session.current_speaker_id || null);
+  resetSpeakerStatusesForSession(req.params.eventId, nextSpeaker?.id || null);
+  if (nextSpeaker) {
+    db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?")
+      .run(nextSpeaker.id, req.params.eventId);
+  } else {
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'winner_pending', updated_at = datetime('now') WHERE event_id = ?")
+      .run(req.params.eventId);
+  }
+
+  const nextPayload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload: nextPayload });
+});
+
+app.post('/api/live/:eventId/mark-presented', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to mark presented' });
+
+  const currentSpeaker = db.prepare('SELECT id, user_id FROM speakers WHERE id = ? AND event_id = ?').get(activeSession.current_speaker_id, req.params.eventId);
+  if (!currentSpeaker) return res.status(404).json({ error: 'Speaker not found' });
+
+  db.prepare("UPDATE speakers SET presented_at = COALESCE(presented_at, datetime('now')), status = 'presented' WHERE id = ?").run(currentSpeaker.id);
+  if (currentSpeaker.user_id) checkAndAwardBadges(currentSpeaker.user_id);
+  resetSpeakerStatusesForSession(req.params.eventId);
+  db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT id, event_id FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  const activeSession = getActiveLiveSessionOrNull(speaker.event_id);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  db.prepare("UPDATE speakers SET status = 'skipped', skipped_at = COALESCE(skipped_at, datetime('now')) WHERE id = ?").run(req.params.id);
+  if (activeSession.current_speaker_id === req.params.id) {
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(speaker.event_id);
+  }
+  const payload = getLiveSessionPayload(speaker.event_id);
   res.json({ ok: true, payload });
 });
 

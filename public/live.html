@@ -63,6 +63,141 @@ body { background: #080a14; overflow: hidden; }
   color: var(--muted);
   font-weight: 600;
 }
+.live-top-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.live-state-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid rgba(124,92,252,0.22);
+  background: rgba(124,92,252,0.14);
+  color: #d9d0ff;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.live-state-pill.voting {
+  background: rgba(67, 201, 120, 0.14);
+  border-color: rgba(67, 201, 120, 0.28);
+  color: #9bf2bc;
+}
+.live-state-pill.pending {
+  background: rgba(255, 179, 71, 0.14);
+  border-color: rgba(255, 179, 71, 0.28);
+  color: #ffd48a;
+}
+.live-state-pill.offline {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.12);
+  color: var(--muted2);
+}
+.live-stage-meta {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  pointer-events: none;
+}
+.live-stage-summary,
+.live-stage-scoreboard {
+  pointer-events: auto;
+  background: rgba(10,12,22,0.74);
+  border: 1px solid rgba(124,92,252,0.18);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.26);
+  backdrop-filter: blur(14px);
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+.live-stage-summary {
+  max-width: 420px;
+}
+.live-stage-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted2);
+  margin-bottom: 8px;
+}
+.live-stage-heading {
+  font-family: var(--font-mono);
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.live-stage-subcopy {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.live-stage-scoreboard {
+  min-width: 180px;
+}
+.live-scoreboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.live-score-card {
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.live-score-label {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted2);
+  margin-bottom: 4px;
+}
+.live-score-value {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.live-next-up {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.live-speaker-item.status-up-next {
+  border-color: rgba(124,92,252,0.18);
+  background: rgba(124,92,252,0.08);
+}
+.live-speaker-item.status-complete {
+  opacity: 0.62;
+}
+.live-speaker-status-tag {
+  font-family: var(--font-mono);
+  font-size: 0.54rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted2);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 3px 6px;
+  flex-shrink: 0;
+}
+.live-vote-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.live-vote-btn.closed { background: rgba(255,255,255,0.08); color: var(--muted2); border: 1px solid rgba(255,255,255,0.08); }
 
 /* ── Main content ── */
 .live-content {
@@ -374,6 +509,19 @@ body { background: #080a14; overflow: hidden; }
 /* ── Responsive: hide sidebar on small screens ── */
 @media (max-width: 860px) {
   .live-sidebar { display: none; }
+  .live-stage-meta {
+    position: static;
+    padding: 16px 16px 0;
+    flex-direction: column;
+  }
+  .live-stage-summary,
+  .live-stage-scoreboard {
+    width: 100%;
+  }
+  .live-info-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 </style>
 </head>
@@ -387,7 +535,10 @@ body { background: #080a14; overflow: hidden; }
       <div class="live-dot" id="liveDot" style="background:#666"></div>
       <span id="liveStatus">Connecting...</span>
     </div>
-    <div class="live-event-name" id="liveEventName">—</div>
+    <div class="live-top-meta">
+      <div class="live-state-pill offline" id="sessionStatePill">Connecting</div>
+      <div class="live-event-name" id="liveEventName">—</div>
+    </div>
   </div>
 
   <!-- Main content -->
@@ -395,6 +546,27 @@ body { background: #080a14; overflow: hidden; }
 
     <!-- Deck iframe -->
     <div class="live-frame-wrap" id="frameWrap">
+      <div class="live-stage-meta">
+        <div class="live-stage-summary">
+          <div class="live-stage-kicker">Demo Day Live</div>
+          <div class="live-stage-heading" id="stageHeading">Waiting for host</div>
+          <div class="live-stage-subcopy" id="stageSubcopy">The stage opens when the host starts the session.</div>
+          <div class="live-next-up" id="nextSpeakerText">Next up: —</div>
+        </div>
+        <div class="live-stage-scoreboard">
+          <div class="live-stage-kicker">Session pulse</div>
+          <div class="live-scoreboard-grid">
+            <div class="live-score-card">
+              <div class="live-score-label">Votes</div>
+              <div class="live-score-value" id="sessionVotes">0</div>
+            </div>
+            <div class="live-score-card">
+              <div class="live-score-label">Sats</div>
+              <div class="live-score-value" id="sessionZaps">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Waiting for session -->
       <div class="live-waiting" id="waitingScreen">
@@ -452,10 +624,15 @@ body { background: #080a14; overflow: hidden; }
 
   <!-- Admin controls -->
   <div class="live-admin-bar" id="adminBar">
-    <span class="live-admin-label">Admin:</span>
+    <span class="live-admin-label">Host controls:</span>
     <button class="btn-live-admin primary" id="startBtn" onclick="startSession()" style="display:none">▶ Start Session</button>
+    <button class="btn-live-admin" id="openVotingBtn" onclick="openVoting()" style="display:none">Open Voting</button>
+    <button class="btn-live-admin" id="closeVotingBtn" onclick="closeVoting()" style="display:none">Close Voting</button>
+    <button class="btn-live-admin" id="markPresentedBtn" onclick="markPresented()" style="display:none">Mark Presented</button>
+    <button class="btn-live-admin" id="advanceBtn" onclick="advanceSpeaker()" style="display:none">Advance Queue</button>
+    <button class="btn-live-admin danger" id="skipSpeakerBtn" onclick="skipSpeaker()" style="display:none">Skip Speaker</button>
     <button class="btn-live-admin danger" id="stopBtn" onclick="stopSession()" style="display:none">■ End Session</button>
-    <span style="font-size:0.72rem;color:var(--muted);margin-left:4px" id="adminSpeakerHint">Click a speaker in the list to make them current</span>
+    <span style="font-size:0.72rem;color:var(--muted);margin-left:4px" id="adminSpeakerHint">Click a speaker in the list to put them on stage.</span>
   </div>
 </div>
 
@@ -466,11 +643,62 @@ let pollInterval = null;
 let currentSpeakerId = null;
 let isAdmin = false;
 let speakers = [];
+let latestPayload = null;
 
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
 
+function formatSessionState(data) {
+  if (!data?.active) return { label: 'Offline', tone: 'offline' };
+  const status = data.session?.status || 'live';
+  if (status === 'voting') return { label: 'Voting Open', tone: 'voting' };
+  if (status === 'winner_pending') return { label: 'Winner Pending', tone: 'pending' };
+  if (status === 'completed') return { label: 'Event Complete', tone: 'offline' };
+  return { label: 'Live Now', tone: 'live' };
+}
+
+function setStatus(active, data = null) {
+  const dot = document.getElementById('liveDot');
+  const status = document.getElementById('liveStatus');
+  const pill = document.getElementById('sessionStatePill');
+  const state = formatSessionState(data || { active });
+  dot.style.background = active ? '#ff4d4d' : '#666';
+  status.textContent = active ? state.label : 'Offline';
+  pill.textContent = state.label;
+  pill.className = `live-state-pill ${state.tone}`;
+}
+
+function renderStageMeta(data) {
+  const spk = data?.speaker;
+  const state = formatSessionState(data);
+  document.getElementById('stageHeading').textContent = spk ? `${spk.name} — ${spk.project_title || spk.project || 'Untitled'}` : 'Waiting for the next presenter';
+  document.getElementById('stageSubcopy').textContent = spk
+    ? (data.session?.voting_open ? 'Audience voting is open. Keep the flow tight and let the scoreboard move.' : 'Speaker is live on stage. Host controls the voting window and queue from here.')
+    : (data?.active ? 'No presenter is currently on stage. Pick the next builder from the lineup.' : 'The stage opens when the host starts the session.');
+  document.getElementById('nextSpeakerText').textContent = data?.next_speaker
+    ? `Next up: ${data.next_speaker.name} — ${data.next_speaker.project_title || data.next_speaker.project || 'Untitled'}`
+    : (data?.active ? `Next up: none yet — ${state.label}` : 'Next up: —');
+  document.getElementById('sessionVotes').textContent = Number(data?.scoreboard?.total_votes || 0).toLocaleString();
+  document.getElementById('sessionZaps').textContent = Number(data?.scoreboard?.total_zaps || 0).toLocaleString();
+}
+
+function renderAdminControls(data) {
+  if (!isAdmin) return;
+  const active = !!data?.active;
+  const hasSpeaker = !!data?.speaker;
+  const votingOpen = !!data?.session?.voting_open;
+  document.getElementById('startBtn').style.display = active ? 'none' : '';
+  document.getElementById('stopBtn').style.display = active ? '' : 'none';
+  document.getElementById('openVotingBtn').style.display = active && hasSpeaker && !votingOpen ? '' : 'none';
+  document.getElementById('closeVotingBtn').style.display = active && votingOpen ? '' : 'none';
+  document.getElementById('markPresentedBtn').style.display = active && hasSpeaker ? '' : 'none';
+  document.getElementById('advanceBtn').style.display = active ? '' : 'none';
+  document.getElementById('skipSpeakerBtn').style.display = active && hasSpeaker ? '' : 'none';
+  document.getElementById('adminSpeakerHint').textContent = active
+    ? (hasSpeaker ? 'Run the live queue from here — voting, completion, and skips stay explicit.' : 'Click a speaker in the list to put them on stage.')
+    : 'Start the session when the room is ready.';
+}
+
 async function init() {
-  // Check auth + admin
   try {
     const me = await fetch('/api/me').then(r => r.json());
     if (me.user?.is_admin) {
@@ -479,10 +707,7 @@ async function init() {
     }
   } catch {}
 
-  // Set join URL
   document.getElementById('joinUrl').textContent = window.location.origin + '/live/' + eventId;
-
-  // Start polling
   await poll();
   pollInterval = setInterval(poll, 3000);
 }
@@ -490,85 +715,71 @@ async function init() {
 async function poll() {
   try {
     const data = await fetch('/api/live/' + eventId).then(r => r.json());
+    latestPayload = data;
     render(data);
   } catch {
+    latestPayload = null;
     setStatus(false);
   }
 }
 
-function setStatus(active) {
-  const dot = document.getElementById('liveDot');
-  const status = document.getElementById('liveStatus');
-  dot.style.background = active ? '#ff4d4d' : '#666';
-  status.textContent = active ? 'LIVE' : 'Offline';
-}
-
 function render(data) {
+  latestPayload = data;
+  renderStageMeta(data);
+  renderAdminControls(data);
+
   if (!data.active) {
-    setStatus(false);
-    // Show offline or waiting
-    if (data.event) {
-      document.getElementById('offlineScreen').style.display = 'flex';
-    } else {
-      document.getElementById('waitingScreen').style.display = 'flex';
-    }
+    setStatus(false, data);
     document.getElementById('waitingScreen').style.display = data.event ? 'none' : 'flex';
     document.getElementById('offlineScreen').style.display = data.event ? 'flex' : 'none';
     document.getElementById('liveFrame').style.display = 'none';
     document.getElementById('noDeckScreen').style.display = 'none';
     document.getElementById('infoBar').style.display = 'none';
-
-    if (isAdmin) {
-      document.getElementById('startBtn').style.display = '';
-      document.getElementById('stopBtn').style.display = 'none';
-    }
+    currentSpeakerId = null;
     return;
   }
 
-  setStatus(true);
+  setStatus(true, data);
   document.getElementById('liveEventName').textContent = data.event?.name || '—';
 
-  // Admin controls
-  if (isAdmin) {
-    document.getElementById('startBtn').style.display = 'none';
-    document.getElementById('stopBtn').style.display = '';
-  }
-
-  // Speaker list
   speakers = data.speakers || [];
   const listEl = document.getElementById('speakerList');
   listEl.innerHTML = speakers.map(s => {
     const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     const isNow = data.speaker?.id === s.id;
+    const isNext = data.next_speaker?.id === s.id;
+    const isComplete = ['presented', 'skipped', 'winner'].includes(s.status);
+    const statusTag = isNow
+      ? '<span class="live-now-badge">NOW</span>'
+      : isNext
+        ? '<span class="live-speaker-status-tag">UP NEXT</span>'
+        : isComplete
+          ? `<span class="live-speaker-status-tag">${esc(s.status)}</span>`
+          : '';
     return `
-      <div class="live-speaker-item${isNow ? ' active' : ''}" id="spk-${esc(s.id)}"
+      <div class="live-speaker-item${isNow ? ' active' : ''}${isNext ? ' status-up-next' : ''}${isComplete ? ' status-complete' : ''}" id="spk-${esc(s.id)}"
         onclick="${isAdmin ? `setSpeaker('${esc(s.id)}')` : ''}">
         <div class="live-speaker-avatar">${esc(initials)}</div>
         <div class="live-speaker-info">
           <div class="live-speaker-name">${esc(s.name)}</div>
           <div class="live-speaker-project">${esc(s.project_title || s.project || '')}</div>
         </div>
-        ${isNow ? '<span class="live-now-badge">NOW</span>' : ''}
-        <span class="live-votes-badge">▲${s.votes || 0}</span>
+        ${statusTag}
+        <span class="live-votes-badge">▲${Number(s.votes || 0).toLocaleString()}</span>
       </div>`;
   }).join('');
 
-  // Current speaker
   const spk = data.speaker;
   if (spk) {
-    // Show speaker info bar
     document.getElementById('infoBar').style.display = 'flex';
     document.getElementById('currentName').textContent = spk.name;
     document.getElementById('currentProject').textContent = spk.project_title || spk.project || '';
-
-    // If speaker changed, update frame
     if (spk.id !== currentSpeakerId) {
       currentSpeakerId = spk.id;
       loadSpeakerDeck(spk);
-      loadVotes(spk.id);
     }
+    loadVotes(spk.id, data);
   } else {
-    // No current speaker — show waiting state
     document.getElementById('infoBar').style.display = 'none';
     document.getElementById('liveFrame').style.display = 'none';
     document.getElementById('noDeckScreen').style.display = 'none';
@@ -600,26 +811,35 @@ function loadSpeakerDeck(spk) {
   }
 }
 
-async function loadVotes(speakerId) {
+async function loadVotes(speakerId, data = latestPayload) {
   try {
-    const data = await fetch(`/api/vote/count?type=speaker&id=${speakerId}`).then(r => r.json());
-    document.getElementById('voteCount').textContent = data.votes || 0;
+    const voteData = await fetch(`/api/vote/count?type=speaker&id=${speakerId}`).then(r => r.json());
+    document.getElementById('voteCount').textContent = voteData.votes || 0;
     const btn = document.getElementById('voteBtn');
-    btn.classList.toggle('voted', !!data.voted);
-    btn.textContent = data.voted ? '✓ Voted' : 'Vote';
+    const votingOpen = !!data?.session?.voting_open;
+    btn.disabled = !votingOpen;
+    btn.classList.toggle('voted', !!voteData.voted);
+    btn.classList.toggle('closed', !votingOpen);
+    btn.textContent = votingOpen ? (voteData.voted ? '✓ Voted' : 'Vote') : 'Voting Closed';
   } catch {}
 }
 
 async function vote() {
   if (!currentSpeakerId) return;
   const btn = document.getElementById('voteBtn');
+  if (btn.disabled) return;
   btn.disabled = true;
   try {
-    const data = await fetch('/api/vote', {
+    const res = await fetch('/api/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'speaker', id: currentSpeakerId }),
-    }).then(r => r.json());
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      btn.textContent = data.error || 'Vote unavailable';
+      return;
+    }
     document.getElementById('voteCount').textContent = data.votes || 0;
     btn.classList.toggle('voted', !!data.voted);
     btn.textContent = data.voted ? '✓ Voted' : 'Vote';
@@ -627,27 +847,61 @@ async function vote() {
   btn.disabled = false;
 }
 
-// Admin actions
+async function hostAction(path, options = {}) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    document.getElementById('adminSpeakerHint').textContent = data.error || 'Host action failed.';
+    return;
+  }
+  if (data?.payload) {
+    latestPayload = data.payload;
+    render(data.payload);
+  } else {
+    await poll();
+  }
+}
+
 async function startSession() {
-  await fetch(`/api/live/${eventId}/start`, { method: 'POST' });
-  await poll();
+  await hostAction(`/api/live/${eventId}/start`);
 }
 
 async function stopSession() {
   if (!confirm('End the live session?')) return;
-  await fetch(`/api/live/${eventId}/stop`, { method: 'POST' });
   currentSpeakerId = null;
-  await poll();
+  await hostAction(`/api/live/${eventId}/stop`);
 }
 
 async function setSpeaker(speakerId) {
   if (!isAdmin) return;
-  await fetch(`/api/live/${eventId}/speaker`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  await hostAction(`/api/live/${eventId}/speaker`, {
     body: JSON.stringify({ speaker_id: speakerId }),
   });
-  await poll();
+}
+
+async function openVoting() {
+  await hostAction(`/api/live/${eventId}/open-voting`);
+}
+
+async function closeVoting() {
+  await hostAction(`/api/live/${eventId}/close-voting`);
+}
+
+async function advanceSpeaker() {
+  await hostAction(`/api/live/${eventId}/advance`);
+}
+
+async function markPresented() {
+  await hostAction(`/api/live/${eventId}/mark-presented`);
+}
+
+async function skipSpeaker() {
+  if (!latestPayload?.speaker?.id) return;
+  await hostAction(`/api/speakers/${latestPayload.speaker.id}/skip`);
 }
 
 init();
