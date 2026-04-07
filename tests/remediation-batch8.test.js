@@ -13,6 +13,7 @@ test('mobile build section nav is static grid navigation instead of a hidden swi
   assert.ok(mobileBlock, 'expected max-width 768px mobile styles');
   const block = mobileBlock[1];
 
+  assert.match(block, /\.build-sidebar \{[\s\S]*position: static;/);
   assert.match(block, /\.sidebar-nav \{[\s\S]*display: grid;[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(block, /\.sidebar-link \{[\s\S]*width: 100%;[\s\S]*min-height: 48px;/);
   assert.match(block, /\.sidebar-link-label \{[\s\S]*text-align: center;/);

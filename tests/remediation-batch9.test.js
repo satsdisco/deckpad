@@ -15,6 +15,10 @@ test('mobile build nav gap is tightened between top tabs and section grid', () =
 
   assert.match(block, /\.header \{[\s\S]*gap: 6px 12px;[\s\S]*min-height: 70px;/);
   assert.match(block, /\.nav-tabs \{[\s\S]*padding: 0 0 4px;/);
+  assert.match(block, /\.build-sidebar \{[\s\S]*position: static;/);
   assert.match(block, /\.build-sidebar-shell \{[\s\S]*padding: 4px 1rem 8px;/);
   assert.match(block, /\.build-content \{[\s\S]*padding: 12px 1rem 0;/);
+  const sidebarBlock = block.match(/\.build-sidebar \{([\s\S]*?)\n  \}/);
+  assert.ok(sidebarBlock, 'expected build sidebar mobile rule');
+  assert.doesNotMatch(sidebarBlock[1], /top:/);
 });

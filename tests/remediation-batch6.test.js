@@ -20,11 +20,11 @@ test('mobile header switches to a real two-row grid instead of overlapping nav a
   assert.match(block, /\.header-actions \{[\s\S]*position: static;/);
 });
 
-test('mobile build nav stays polished with sticky section chips and responsive carousel sizing', () => {
+test('mobile build nav stays polished with static section chips and responsive carousel sizing', () => {
   const css = read('public', 'css', 'style.css');
 
-  assert.match(css, /\.build-sidebar \{[\s\S]*position: sticky;[\s\S]*top: 74px;/);
-  assert.match(css, /\.sidebar-link \{[\s\S]*border-radius: 999px;/);
+  assert.match(css, /\.build-sidebar \{[\s\S]*position: static;/);
+  assert.match(css, /\.sidebar-link \{[\s\S]*border-radius: 14px;/);
   assert.match(css, /\.event-carousel \.event-card \{[\s\S]*min-width: calc\(100vw - 3rem\);/);
   assert.match(css, /@media \(max-width: 480px\) \{[\s\S]*\.event-carousel \.event-card \{[\s\S]*min-width: calc\(100vw - 2\.25rem\);/);
 });
