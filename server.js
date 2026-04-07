@@ -634,12 +634,22 @@ app.use((req, res, next) => {
   next();
 });
 
+function isLocalDevAutoLoginRequest(req) {
+  const host = String(req.hostname || '').toLowerCase();
+  return !process.env.BASE_URL && ['localhost', '127.0.0.1', '::1'].includes(host);
+}
+
+function isStagingQaHost(req) {
+  const host = String(req.hostname || '').toLowerCase();
+  return host === 'decks.satsdisco.com';
+}
+
 app.use((req, res, next) => {
   if (req.session && req.session.userId) {
     req.user = stmts.getUserById.get(req.session.userId);
   }
-  // Auto-login as dev user in local development (no BASE_URL set)
-  if (!req.user && !process.env.BASE_URL) {
+  // Auto-login as dev user in local development only
+  if (!req.user && isLocalDevAutoLoginRequest(req)) {
     const which = req.session?.devUser || 'alice';
     let devUser = db.prepare("SELECT * FROM users WHERE username = ?").get(which);
     if (!devUser) {
@@ -808,11 +818,22 @@ app.post('/auth/login', (req, res) => {
 
 // Dev user switcher (local only)
 app.get('/dev/switch/:name', (req, res) => {
-  if (process.env.BASE_URL) return res.status(404).send('Not found');
+  if (!isLocalDevAutoLoginRequest(req)) return res.status(404).send('Not found');
   const name = req.params.name;
   if (!['alice', 'bob'].includes(name)) return res.status(400).send('Use /dev/switch/alice or /dev/switch/bob');
   req.session.devUser = name;
   req.session.userId = null;
+  res.redirect('/');
+});
+
+app.get('/auth/staging-login/:username', (req, res) => {
+  if (!isStagingQaHost(req)) return res.status(404).send('Not found');
+  const username = String(req.params.username || '').toLowerCase();
+  if (!username.startsWith('stg_')) return res.status(400).send('Staging QA login only supports stg_ accounts');
+  const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(404).send('Staging QA user not found');
+  req.session.devUser = null;
+  req.session.userId = user.id;
   res.redirect('/');
 });
 
