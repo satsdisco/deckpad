@@ -210,7 +210,7 @@
           <button class="onboarding-dismiss" type="button" aria-label="Skip getting started" onclick="dismissFirstVisitPanel()">Skip</button>
         </div>
         <div class="onboarding-progress" aria-live="polite">
-          <strong class="onboarding-progress-count" id="onboardingProgressCount">0 / 3 complete</strong>
+          <strong class="onboarding-progress-count" id="onboardingProgressCount">0 / 2 complete</strong>
           <span class="onboarding-progress-copy" id="onboardingPrimaryCopy">Finish these basics and this panel gets out of your way.</span>
         </div>
         <div class="onboarding-steps" aria-label="Suggested first steps">
@@ -236,17 +236,6 @@
               <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('project')">Add project</button>
             </div>
           </div>
-          <div class="onboarding-step" id="onboardingTaskExplore">
-            <span class="onboarding-step-index">3</span>
-            <div class="onboarding-step-copy">
-              <strong>Explore the live flow</strong>
-              <span id="onboardingExploreCopy">Check events, bounties, or the foyer so the weekly rhythm makes sense.</span>
-            </div>
-            <div class="onboarding-step-actions">
-              <span class="onboarding-step-status" id="onboardingExploreStatus">Next</span>
-              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('explore')">Browse build flow</button>
-            </div>
-          </div>
         </div>
         <div class="onboarding-shortcuts">
           <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('events')">
@@ -257,7 +246,7 @@
             <span class="onboarding-shortcut-label">Bounties</span>
             <span class="onboarding-shortcut-copy">Find work you can jump into.</span>
           </button>
-          <a class="onboarding-shortcut onboarding-shortcut-link" href="/foyer" onclick="markOnboardingTaskDone('explore')">
+          <a class="onboarding-shortcut onboarding-shortcut-link" href="/foyer">
             <span class="onboarding-shortcut-label">The Foyer</span>
             <span class="onboarding-shortcut-copy">Meet ideas, teams, and momentum.</span>
           </a>
@@ -605,7 +594,7 @@ let currentView = 'events';
 let projectSubmissionContext = { bountyId: '', bountyTitle: '' };
 const FIRST_VISIT_PANEL_KEY = 'lunarpad:first-visit-panel:dismissed:v2';
 const ONBOARDING_PROGRESS_KEY = 'lunarpad:onboarding-progress:v1';
-let onboardingState = { user: null, projectCount: 0, explored: false };
+let onboardingState = { user: null, projectCount: 0 };
 
 function shouldForceShowFirstVisitPanel() {
   try {
@@ -680,12 +669,10 @@ function writeOnboardingProgress(progress) {
 }
 
 function getOnboardingChecklistState(user = onboardingState.user, projectCount = onboardingState.projectCount) {
-  const progress = readOnboardingProgress();
   const profileReady = !!(user && (user.bio || user.website_url || user.github_url || user.lightning_address || user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== ''));
   const hasProject = Number(projectCount || 0) > 0;
-  const explored = !!progress.explored;
-  const completedCount = [profileReady, hasProject, explored].filter(Boolean).length;
-  return { profileReady, hasProject, explored, completedCount, total: 3, allDone: completedCount === 3 };
+  const completedCount = [profileReady, hasProject].filter(Boolean).length;
+  return { profileReady, hasProject, completedCount, total: 2, allDone: completedCount === 2 };
 }
 
 function renderOnboardingChecklist() {
@@ -696,13 +683,10 @@ function renderOnboardingChecklist() {
   const primaryCopy = document.getElementById('onboardingPrimaryCopy');
   const profileStatus = document.getElementById('onboardingProfileStatus');
   const projectStatus = document.getElementById('onboardingProjectStatus');
-  const exploreStatus = document.getElementById('onboardingExploreStatus');
   const profileCopy = document.getElementById('onboardingProfileCopy');
   const projectCopy = document.getElementById('onboardingProjectCopy');
-  const exploreCopy = document.getElementById('onboardingExploreCopy');
   const profileCard = document.getElementById('onboardingTaskProfile');
   const projectCard = document.getElementById('onboardingTaskProject');
-  const exploreCard = document.getElementById('onboardingTaskExplore');
   if (progressCount) progressCount.textContent = `${state.completedCount} / ${state.total} complete`;
   if (primaryCopy) {
     primaryCopy.textContent = state.allDone
@@ -711,14 +695,11 @@ function renderOnboardingChecklist() {
   }
   if (profileStatus) profileStatus.textContent = state.profileReady ? 'Done' : 'Next';
   if (projectStatus) projectStatus.textContent = state.hasProject ? 'Done' : 'Next';
-  if (exploreStatus) exploreStatus.textContent = state.explored ? 'Done' : 'Next';
   if (profileCopy) profileCopy.textContent = state.profileReady ? 'Your profile has enough signal now that people can tell who you are.' : 'Add a bio, links, lightning, or availability so people know who you are.';
   if (projectCopy) projectCopy.textContent = state.hasProject ? `You already have ${onboardingState.projectCount} project${onboardingState.projectCount === 1 ? '' : 's'} on the board.` : 'Ship something small so people can see what you are building.';
-  if (exploreCopy) exploreCopy.textContent = state.explored ? 'Good. You have already poked around the live build flow.' : 'Check events, bounties, or the foyer so the weekly rhythm makes sense.';
   [
     [profileCard, state.profileReady],
     [projectCard, state.hasProject],
-    [exploreCard, state.explored],
   ].forEach(([el, done]) => {
     if (!el) return;
     el.classList.toggle('complete', !!done);
@@ -754,13 +735,6 @@ function maybeShowFirstVisitPanel(user) {
   renderOnboardingChecklist();
 }
 
-function markOnboardingTaskDone(task) {
-  const progress = readOnboardingProgress();
-  if (task === 'explore') progress.explored = true;
-  writeOnboardingProgress(progress);
-  renderOnboardingChecklist();
-}
-
 function handleOnboardingAction(viewName) {
   if (viewName === 'profile') {
     window.location.href = '/profile';
@@ -771,18 +745,9 @@ function handleOnboardingAction(viewName) {
     document.getElementById('projectModal').classList.add('open');
     return;
   }
-  if (viewName === 'explore') {
-    markOnboardingTaskDone('explore');
-    switchToView('bounties', { resetProjectContext: true });
-    return;
-  }
   if (viewName === 'foyer') {
-    markOnboardingTaskDone('explore');
     window.location.href = '/foyer';
     return;
-  }
-  if (['events', 'projects', 'bounties', 'leaderboard'].includes(viewName)) {
-    markOnboardingTaskDone('explore');
   }
   switchToView(viewName, { resetProjectContext: true });
 }

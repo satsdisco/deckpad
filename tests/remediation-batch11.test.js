@@ -6,20 +6,18 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8');
 
-test('build page onboarding stays progress-based until setup is actually done', () => {
+test('build page onboarding stays focused on the two real setup tasks', () => {
   const html = read('public', 'build.html');
   const css = read('public', 'css', 'style.css');
 
   assert.match(html, /id="firstVisitPanel"/);
   assert.match(html, /Welcome to LunarPad/);
   assert.match(html, /id="onboardingNameSuffix"/);
-  assert.match(html, /0 \/ 3 complete/);
+  assert.match(html, /0 \/ 2 complete/);
   assert.match(html, /Set up your profile/);
   assert.match(html, /Add your first project/);
-  assert.match(html, /Explore the live flow/);
   assert.match(html, /Open profile/);
   assert.match(html, /Add project/);
-  assert.match(html, /Browse build flow/);
   assert.match(html, /Events/);
   assert.match(html, /Bounties/);
   assert.match(html, /The Foyer/);
@@ -30,9 +28,10 @@ test('build page onboarding stays progress-based until setup is actually done', 
   assert.match(html, /function readOnboardingProgress/);
   assert.match(html, /function getOnboardingChecklistState/);
   assert.match(html, /function renderOnboardingChecklist/);
-  assert.match(html, /function markOnboardingTaskDone/);
   assert.match(html, /function handleOnboardingAction/);
   assert.match(html, /viewName === 'project'/);
+  assert.doesNotMatch(html, /Explore the live flow/);
+  assert.doesNotMatch(html, /Browse build flow/);
   assert.doesNotMatch(html, /function handleOnboardingAction\([\s\S]*dismissFirstVisitPanel\(\)/);
 
   assert.match(css, /\.onboarding-progress \{/);
@@ -40,6 +39,7 @@ test('build page onboarding stays progress-based until setup is actually done', 
   assert.match(css, /\.onboarding-step-actions \{/);
   assert.match(css, /\.onboarding-step-status \{/);
   assert.match(css, /\.onboarding-shortcuts \{/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(css, /@media \(max-width: 768px\) \{[\s\S]*\.onboarding-progress \{/);
 });
 
