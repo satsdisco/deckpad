@@ -1845,6 +1845,63 @@ app.get('/api/decks/:id/zaps', (req, res) => {
   res.json({ zaps, total_sats: row?.total || 0 });
 });
 
+// POST /api/speakers/:id/zap — generate invoice to zap this presenter
+app.post('/api/speakers/:id/zap', requireAuth, async (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  const amount_sats = parseInt(req.body.amount_sats);
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
+  if (amount_sats > 10_000_000) return res.status(400).json({ error: 'amount_sats exceeds maximum (10M sats)' });
+
+  let recipientAddress = null;
+  let recipient = speaker.name;
+
+  if (speaker.user_id) {
+    const presenter = db.prepare('SELECT name, lightning_address FROM users WHERE id = ?').get(speaker.user_id);
+    if (presenter?.lightning_address) {
+      recipientAddress = presenter.lightning_address;
+      recipient = presenter.name || speaker.name;
+    }
+  }
+  if (!recipientAddress && speaker.name) {
+    const presenter = db.prepare("SELECT name, lightning_address FROM users WHERE name = ? AND lightning_address IS NOT NULL LIMIT 1").get(speaker.name);
+    if (presenter?.lightning_address) {
+      recipientAddress = presenter.lightning_address;
+      recipient = presenter.name || speaker.name;
+    }
+  }
+
+  try {
+    const webhookUrl = (process.env.BASE_URL || `http://localhost:${PORT}`) + '/api/webhook/lnbits';
+    const lnbitsInv = await lnbitsCreateInvoice(amount_sats, `Zap: ${speaker.project_title} by ${speaker.name}`, webhookUrl);
+    const zapId = crypto.randomUUID();
+    db.prepare(`INSERT INTO zaps (id, target_type, target_id, user_id, user_name, amount_sats, payment_request, payment_hash, verify_url, status, recipient_address)
+      VALUES (?, 'speaker', ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`).run(
+      zapId, speaker.id,
+      req.user.id, req.user.name || req.user.email,
+      amount_sats, lnbitsInv.payment_request, lnbitsInv.payment_hash, recipientAddress
+    );
+    const qrData = 'lightning:' + lnbitsInv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({ zap_id: zapId, payment_request: lnbitsInv.payment_request, qr_data_url, recipient });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// GET /api/speakers/:id/zaps — confirmed zaps for this speaker
+app.get('/api/speakers/:id/zaps', (req, res) => {
+  const zaps = db.prepare(
+    `SELECT id, user_id, user_name, amount_sats, created_at
+     FROM zaps WHERE target_type = 'speaker' AND target_id = ? AND status = 'confirmed'
+     ORDER BY created_at DESC LIMIT 20`
+  ).all(req.params.id);
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(amount_sats), 0) as total FROM zaps WHERE target_type = 'speaker' AND target_id = ? AND status = 'confirmed'`
+  ).get(req.params.id);
+  res.json({ zaps, total_sats: row?.total || 0 });
+});
+
 // GET /api/zaps/verify/:zap_id — check payment via LNbits API or verify URL
 app.get('/api/zaps/verify/:zap_id', async (req, res) => {
   const zap = db.prepare('SELECT * FROM zaps WHERE id = ?').get(req.params.zap_id);
@@ -1884,6 +1941,12 @@ app.get('/api/zaps/verify/:zap_id', async (req, res) => {
         if (idea?.user_id) {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
           notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
+        }
+      } else if (zap.target_type === 'speaker') {
+        const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+        if (speaker?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+          notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
         }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -1944,6 +2007,12 @@ app.post('/api/zaps/confirm/:zap_id', requireAuth, (req, res) => {
       db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
       notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
     }
+  } else if (zap.target_type === 'speaker') {
+    const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+    if (speaker?.user_id) {
+      db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+      notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
+    }
   }
   if (zap.user_id) cachedBadgeCheck(zap.user_id);
   autoForwardZap(zap).catch(e => console.error('[confirm autoForward]', e.message));
@@ -1986,6 +2055,12 @@ app.post('/api/webhook/lnbits', async (req, res) => {
         if (idea?.user_id) {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
           notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
+        }
+      } else if (zap.target_type === 'speaker') {
+        const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+        if (speaker?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+          notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
         }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -3254,12 +3329,27 @@ function getLiveSessionPayload(eventId) {
     completed: speakers.filter((speaker) => ['presented', 'skipped', 'winner'].includes(speaker.status)),
   };
 
+  const vote_leader = speakers
+    .slice()
+    .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0) || Number(b.zap_total || 0) - Number(a.zap_total || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))[0] || null;
+  const zap_leader = speakers
+    .slice()
+    .sort((a, b) => Number(b.zap_total || 0) - Number(a.zap_total || 0) || Number(b.votes || 0) - Number(a.votes || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))[0] || null;
+  const recent_support = db.prepare(`
+    SELECT z.id, z.target_id, z.user_name, z.amount_sats, z.created_at, s.name as speaker_name, s.project_title
+    FROM zaps z
+    JOIN speakers s ON s.id = z.target_id
+    WHERE z.target_type = 'speaker' AND z.status = 'confirmed' AND s.event_id = ?
+    ORDER BY z.confirmed_at DESC, z.created_at DESC
+    LIMIT 4
+  `).all(eventId);
   const scoreboard = {
     total_votes: speakers.reduce((sum, speaker) => sum + Number(speaker.votes || 0), 0),
     total_zaps: speakers.reduce((sum, speaker) => sum + Number(speaker.zap_total || 0), 0),
-    leader: speakers
-      .slice()
-      .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0) || Number(b.zap_total || 0) - Number(a.zap_total || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))[0] || null,
+    leader: vote_leader,
+    vote_leader,
+    zap_leader,
+    recent_support,
   };
 
   const results = db.prepare('SELECT id, created_at FROM event_results WHERE event_id = ?').get(eventId);
