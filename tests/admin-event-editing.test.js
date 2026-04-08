@@ -6,9 +6,10 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8');
 
-test('event API exposes an edit route gated by event-edit capability', () => {
+test('event API exposes an admin edit route with required time validation', () => {
   const server = read('server.js');
-  assert.match(server, /app\.put\('\/api\/events\/:id', requireAuth, requireEventCapability\('event\.edit', 'id'\), \(req, res\) => \{/);
+  assert.match(server, /app\.put\('\/api\/events\/:id', requireAuth, \(req, res\) => \{/);
+  assert.match(server, /if \(!req\.user\?\.is_admin\) return res\.status\(403\)\.json\(\{ error: 'Admin access required' \}\)/);
   assert.match(server, /if \(!time\) return res\.status\(400\)\.json\(\{ error: 'time required' \}\)/);
   assert.match(server, /UPDATE events[\s\S]*SET name = \?, description = \?, event_type = \?, date = \?, time = \?, location = \?, virtual_link = \?/);
 });
