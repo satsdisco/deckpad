@@ -23,6 +23,8 @@
   <div class="foyer-header">
     <h1>The Foyer</h1>
     <p>Share ideas, find collaborators, build together.</p>
+    <div class="foyer-guidance" id="foyerGuidance">Click a bubble to explore an idea, join a team, or help shape what gets built next.</div>
+    <div class="foyer-legend" id="foyerLegend">Bubble size shows relative support.</div>
   </div>
 
   <div class="foyer-filters">
@@ -106,10 +108,34 @@ async function loadIdeas(sort) {
 
 function renderBubbles() {
   const container = document.getElementById('bubbleContainer');
+  const guidance = document.getElementById('foyerGuidance');
+  const legend = document.getElementById('foyerLegend');
+  const filters = document.querySelector('.foyer-filters');
+  const legendLabel = {
+    top: 'Bubble size shows vote momentum right now.',
+    newest: 'Bubble size still reflects vote momentum while this view sorts by newest.',
+    oldest: 'Bubble size still reflects vote momentum while this view sorts by oldest.',
+    most_zapped: 'Bubble size shows sats-backed support.',
+    biggest_team: 'Bubble size shows current team size.',
+  }[_currentSort] || 'Bubble size shows relative support.';
   if (!_ideas.length) {
-    container.innerHTML = '<div class="foyer-empty">No ideas yet. Be the first to post one!</div>';
+    container.innerHTML = `
+      <div class="foyer-empty foyer-empty-card">
+        <strong>No ideas yet</strong>
+        <span>Start the foyer with a problem, a concept, or a collaboration request.</span>
+        <button class="btn btn-primary foyer-empty-cta" type="button" onclick="document.getElementById('ideaModal').classList.add('open')">Post the first idea</button>
+      </div>`;
+    if (guidance) guidance.innerHTML = 'Ideas posted here turn into bubbles once the foyer has something to explore.';
+    if (legend) legend.textContent = 'Bubble size will track votes, sats, or team size once ideas are live.';
+    if (filters) filters.style.display = 'none';
     return;
   }
+  if (filters) filters.style.display = '';
+  if (guidance && window.LunarUiRules) {
+    const lowContentMessage = window.LunarUiRules.getFoyerLowContentMessage(_ideas);
+    guidance.innerHTML = lowContentMessage || 'Click a bubble to explore an idea, join a team, or help shape what gets built next.';
+  }
+  if (legend) legend.textContent = legendLabel;
   // Size bubbles based on active sort metric
   const sorted = [..._ideas];
   const metricFn = {

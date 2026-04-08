@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css'>
 <script src='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js'></script>
+<script src="/js/ui-rules.js"></script>
 <style>
 .proj-banner-edit-btn {
   position: absolute; top: 6px; right: 6px;
@@ -86,6 +87,12 @@
 .event-hero-title { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 800; color: var(--text); margin-bottom: 8px; margin-top: 0; letter-spacing: -0.02em; }
 .event-hero-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
 .event-hero-desc { font-size: 0.85rem; color: var(--text2); line-height: 1.6; margin-bottom: 16px; max-width: 560px; }
+.hero-attendees { display:inline-flex; align-items:center; gap:10px; margin:0 0 14px; }
+.hero-attendee-stack { display:flex; align-items:center; }
+.hero-attendee-avatar { width:28px; height:28px; border-radius:50%; border:2px solid var(--bg); background:var(--glass2); color:var(--text); display:inline-flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:700; margin-left:-8px; overflow:hidden; }
+.hero-attendee-avatar:first-child { margin-left:0; }
+.hero-attendee-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+.hero-attendee-count { font-size:0.78rem; color:var(--muted); }
 .event-hero-countdown { display: flex; gap: 10px; margin-bottom: 20px; }
 .event-hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -167,16 +174,83 @@
 
     <!-- Sidebar -->
     <aside class="build-sidebar">
-      <nav class="sidebar-nav">
-        <button class="sidebar-link active" data-view="events">Events</button>
-        <button class="sidebar-link" data-view="projects">Projects</button>
-        <button class="sidebar-link" data-view="bounties">Bounties</button>
-        <button class="sidebar-link" data-view="leaderboard">Leaderboard</button>
-      </nav>
+      <div class="build-sidebar-shell">
+        <div class="sidebar-title">Build in Public</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-link active" data-view="events">
+            <span class="sidebar-link-kicker">Now</span>
+            <span class="sidebar-link-label">Events</span>
+          </button>
+          <button class="sidebar-link" data-view="projects">
+            <span class="sidebar-link-kicker">Ship</span>
+            <span class="sidebar-link-label">Projects</span>
+          </button>
+          <button class="sidebar-link" data-view="bounties">
+            <span class="sidebar-link-kicker">Earn</span>
+            <span class="sidebar-link-label">Bounties</span>
+          </button>
+          <button class="sidebar-link" data-view="leaderboard">
+            <span class="sidebar-link-kicker">Rank</span>
+            <span class="sidebar-link-label">Leaderboard</span>
+          </button>
+        </nav>
+      </div>
     </aside>
 
     <!-- Content -->
     <main class="build-content">
+      <section class="onboarding-panel" id="firstVisitPanel" hidden>
+        <div class="onboarding-panel-head">
+          <div>
+            <div class="onboarding-kicker">Getting started</div>
+            <h2 class="onboarding-title">Welcome to LunarPad<span id="onboardingNameSuffix"></span></h2>
+            <p class="onboarding-copy">LunarPad is where builders share projects, join events, and pick up bounties. Start with the live feed, then branch out when something catches your eye.</p>
+          </div>
+          <button class="onboarding-dismiss" type="button" aria-label="Skip getting started" onclick="dismissFirstVisitPanel()">Skip</button>
+        </div>
+        <div class="onboarding-progress" aria-live="polite">
+          <strong class="onboarding-progress-count" id="onboardingProgressCount">0 / 2 complete</strong>
+          <span class="onboarding-progress-copy" id="onboardingPrimaryCopy">Finish these basics and this panel gets out of your way.</span>
+        </div>
+        <div class="onboarding-steps" aria-label="Suggested first steps">
+          <div class="onboarding-step" id="onboardingTaskProfile">
+            <span class="onboarding-step-index">1</span>
+            <div class="onboarding-step-copy">
+              <strong>Set up your profile</strong>
+              <span id="onboardingProfileCopy">Add a bio, links, lightning, or availability so people know who you are.</span>
+            </div>
+            <div class="onboarding-step-actions">
+              <span class="onboarding-step-status" id="onboardingProfileStatus" hidden></span>
+              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('profile')">Open profile</button>
+            </div>
+          </div>
+          <div class="onboarding-step" id="onboardingTaskProject">
+            <span class="onboarding-step-index">2</span>
+            <div class="onboarding-step-copy">
+              <strong>Add your first project</strong>
+              <span id="onboardingProjectCopy">Ship something small so people can see what you are building.</span>
+            </div>
+            <div class="onboarding-step-actions">
+              <span class="onboarding-step-status" id="onboardingProjectStatus" hidden></span>
+              <button class="btn btn-sm onboarding-task-btn" type="button" onclick="handleOnboardingAction('project')">Add project</button>
+            </div>
+          </div>
+        </div>
+        <div class="onboarding-shortcuts">
+          <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('events')">
+            <span class="onboarding-shortcut-label">Events</span>
+            <span class="onboarding-shortcut-copy">See what is happening now.</span>
+          </button>
+          <button class="onboarding-shortcut" type="button" onclick="handleOnboardingAction('bounties')">
+            <span class="onboarding-shortcut-label">Bounties</span>
+            <span class="onboarding-shortcut-copy">Find work you can jump into.</span>
+          </button>
+          <a class="onboarding-shortcut onboarding-shortcut-link" href="/foyer">
+            <span class="onboarding-shortcut-label">The Foyer</span>
+            <span class="onboarding-shortcut-copy">Meet ideas, teams, and momentum.</span>
+          </a>
+        </div>
+      </section>
 
       <!-- Events View -->
       <div class="build-view active" id="view-events">
@@ -189,12 +263,13 @@
           <div id="eventHero"></div>
           <div class="event-carousel-wrap">
             <div class="event-carousel" id="eventsGrid"></div>
+            <div class="carousel-counter event-carousel-toolbar" id="eventCounter"></div>
           </div>
-          <div class="carousel-counter" id="eventCounter"></div>
           <div class="mini-cal" id="miniCal"></div>
           <div id="pastEventsSection" style="display:none;margin-top:24px">
             <div class="section-header" style="margin-bottom:12px">
               <span class="section-title" style="font-size:0.75rem;color:var(--muted2)">Past Events</span>
+              <button id="pastEventsToggle" class="btn btn-sm" style="display:none" onclick="togglePastEvents()">View all past events</button>
             </div>
             <div id="pastEventsGrid" class="project-grid"></div>
           </div>
@@ -219,12 +294,16 @@
             <span class="section-title">Projects</span>
             <button class="btn btn-sm" onclick="document.getElementById('projectModal').classList.add('open')">+ Submit</button>
           </div>
-          <div class="tag-bar" id="projectTagBar"></div>
+          <div class="tag-bar-wrap" id="projectTagBarWrap">
+            <div class="tag-bar" id="projectTagBar"></div>
+          </div>
+          <div class="tag-overflow-hint" id="projectTagOverflowHint">Scroll for more filters →</div>
           <div class="project-grid" id="projectsGrid">
             <div class="skeleton-card"><div class="skeleton sk-line sk-w-60" style="height:16px;margin-bottom:8px"></div><div class="skeleton sk-line sk-w-80" style="height:11px;margin-bottom:6px"></div><div class="skeleton sk-line sk-w-40" style="height:11px"></div></div>
             <div class="skeleton-card"><div class="skeleton sk-line sk-w-60" style="height:16px;margin-bottom:8px"></div><div class="skeleton sk-line sk-w-80" style="height:11px;margin-bottom:6px"></div><div class="skeleton sk-line sk-w-40" style="height:11px"></div></div>
             <div class="skeleton-card"><div class="skeleton sk-line sk-w-60" style="height:16px;margin-bottom:8px"></div><div class="skeleton sk-line sk-w-80" style="height:11px;margin-bottom:6px"></div><div class="skeleton sk-line sk-w-40" style="height:11px"></div></div>
           </div>
+          <div class="projects-sparse-cta" id="projectsSparseCta" style="display:none"></div>
         </div>
 
       </div><!-- end #view-projects -->
@@ -235,7 +314,7 @@
         <div class="section-block" id="section-bounties">
           <div class="section-header">
             <span class="section-title">Bounties</span>
-            <button class="btn btn-sm" id="createBountyBtn" style="display:none" onclick="document.getElementById('bountyCreateModal').classList.add('open')">+ Create Bounty</button>
+            <button class="btn btn-sm btn-primary create-bounty-cta" id="createBountyBtn" style="display:none" onclick="document.getElementById('bountyCreateModal').classList.add('open')">+ Create Bounty</button>
           </div>
           <div class="bounty-grid" id="bountiesGrid">
             <div class="skeleton-card"><div class="skeleton sk-line sk-w-60" style="height:16px;margin-bottom:10px"></div><div class="skeleton sk-line sk-w-100" style="height:11px;margin-bottom:6px"></div><div class="skeleton sk-line sk-w-40" style="height:22px;margin-top:8px;border-radius:100px"></div></div>
@@ -384,9 +463,10 @@
         <input type="url" id="projDemo" placeholder="https://…">
       </div>
     </div>
-    <div class="form-group">
-      <label>Attach Presentation (optional)</label>
-      <select id="projDeckId"><option value="">None</option></select>
+    <div class="form-group project-deck-field">
+      <label>Attach Presentation <span style="font-weight:400;color:var(--muted2)">(recommended if you already uploaded a deck)</span></label>
+      <div class="project-deck-field-copy" id="projDeckFieldCopy">Link a presentation so visitors can open your deck directly from the project page.</div>
+      <select id="projDeckId"><option value="">None yet</option></select>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
@@ -473,7 +553,7 @@
 
 <div id="projZapOverlay" class="zap-overlay">⚡</div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
 function esc(s) {
@@ -511,27 +591,224 @@ let eventsData = [];
 let speakersData = [];
 let nextDemoDay = null;
 let heroEventData = null;
+let heroRsvpState = { userRsvp: false, loading: false };
+let showAllPastEvents = false;
 let countdownTimers = {};
+let currentView = 'events';
+
+function getEventStartDate(ev) {
+  if (!ev?.date || !ev?.time) return null;
+  const value = new Date(ev.date + ('T' + ev.time));
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+
+function formatBountyDeadlineState(deadline) {
+  if (!deadline) return null;
+  const deadlineDate = new Date(deadline);
+  if (Number.isNaN(deadlineDate.getTime())) return null;
+  const diff = deadlineDate.getTime() - Date.now();
+  const days = Math.ceil(diff / 86400000);
+  const label = deadlineDate.toLocaleDateString('en', { month:'short', day:'numeric', year:'numeric' });
+  if (diff < 0) return { label: 'Deadline passed: ' + label, tone: 'overdue' };
+  if (days === 0) return { label: 'Due today', tone: 'urgent' };
+  if (days === 1) return { label: '1 day left · ' + label, tone: 'urgent' };
+  if (days <= 3) return { label: days + ' days left · ' + label, tone: 'soon' };
+  return { label: days + ' days left · ' + label, tone: 'normal' };
+}
+let projectSubmissionContext = { bountyId: '', bountyTitle: '' };
+const FIRST_VISIT_PANEL_KEY = 'lunarpad:first-visit-panel:dismissed:v2';
+const ONBOARDING_PROGRESS_KEY = 'lunarpad:onboarding-progress:v1';
+let onboardingState = { user: null, projectCount: 0 };
+
+function shouldForceShowFirstVisitPanel() {
+  try {
+    return new URLSearchParams(window.location.search).get('showOnboarding') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function clearForcedFirstVisitPanelParam() {
+  if (!shouldForceShowFirstVisitPanel()) return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('showOnboarding');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch {}
+}
 
 // ─── Sidebar Navigation ───────────────────────────────────────────────────
-function switchToView(viewName) {
+function clearProjectSubmissionContext() {
+  projectSubmissionContext = { bountyId: '', bountyTitle: '' };
+  const bountyIdField = document.getElementById('projBountyId');
+  const bountyLabel = document.getElementById('projBountyLabel');
+  if (bountyIdField) bountyIdField.value = '';
+  if (bountyLabel) {
+    bountyLabel.textContent = '';
+    bountyLabel.style.display = 'none';
+  }
+}
+
+function getFabConfigForView(viewName) {
+  if (viewName === 'projects') {
+    if (projectSubmissionContext.bountyId) {
+      return { visible: true, title: 'Submit to Bounty', label: 'Submit to Bounty', action: 'project' };
+    }
+    return { visible: true, title: 'Submit Project', label: 'Submit Project', action: 'project' };
+  }
+  if (viewName === 'events') {
+    return { visible: true, title: 'Present Project', label: 'Present Project', action: 'present' };
+  }
+  return { visible: false, title: '', label: '', action: '' };
+}
+
+function renderContextualFab() {
+  const fab = document.getElementById('contextualFab');
+  if (!fab) return;
+  const config = getFabConfigForView(currentView);
+  fab.style.display = config.visible ? '' : 'none';
+  fab.setAttribute('title', config.title || '');
+  fab.dataset.action = config.action || '';
+  const label = fab.querySelector('.fab-label');
+  if (label) label.textContent = config.label || '';
+}
+
+function dismissFirstVisitPanel() {
+  const panel = document.getElementById('firstVisitPanel');
+  if (panel) panel.hidden = true;
+  clearForcedFirstVisitPanelParam();
+  try { localStorage.setItem(FIRST_VISIT_PANEL_KEY, '1'); } catch {}
+}
+
+function readOnboardingProgress() {
+  try {
+    return JSON.parse(localStorage.getItem(ONBOARDING_PROGRESS_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOnboardingProgress(progress) {
+  try { localStorage.setItem(ONBOARDING_PROGRESS_KEY, JSON.stringify(progress || {})); } catch {}
+}
+
+function getOnboardingChecklistState(user = onboardingState.user, projectCount = onboardingState.projectCount) {
+  const profileReady = !!(user && (user.bio || user.website_url || user.github_url || user.lightning_address || user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== ''));
+  const hasProject = Number(projectCount || 0) > 0;
+  const completedCount = [profileReady, hasProject].filter(Boolean).length;
+  return { profileReady, hasProject, completedCount, total: 2, allDone: completedCount === 2 };
+}
+
+function renderOnboardingChecklist() {
+  const panel = document.getElementById('firstVisitPanel');
+  if (!panel || !onboardingState.user) return;
+  const state = getOnboardingChecklistState();
+  const progressCount = document.getElementById('onboardingProgressCount');
+  const primaryCopy = document.getElementById('onboardingPrimaryCopy');
+  const profileStatus = document.getElementById('onboardingProfileStatus');
+  const projectStatus = document.getElementById('onboardingProjectStatus');
+  const profileCopy = document.getElementById('onboardingProfileCopy');
+  const projectCopy = document.getElementById('onboardingProjectCopy');
+  const profileCard = document.getElementById('onboardingTaskProfile');
+  const projectCard = document.getElementById('onboardingTaskProject');
+  if (progressCount) progressCount.textContent = `${state.completedCount} / ${state.total} complete`;
+  if (primaryCopy) {
+    primaryCopy.textContent = state.allDone
+      ? 'Nice. You have the basics in place now, so this onboarding panel will stop nagging you.'
+      : 'Finish these basics and this panel gets out of your way.';
+  }
+  if (profileStatus) {
+    profileStatus.textContent = state.profileReady ? 'Done' : '';
+    profileStatus.hidden = !state.profileReady;
+  }
+  if (projectStatus) {
+    projectStatus.textContent = state.hasProject ? 'Done' : '';
+    projectStatus.hidden = !state.hasProject;
+  }
+  if (profileCopy) profileCopy.textContent = state.profileReady ? 'Your profile has enough signal now that people can tell who you are.' : 'Add a bio, links, lightning, or availability so people know who you are.';
+  if (projectCopy) projectCopy.textContent = state.hasProject ? `You already have ${onboardingState.projectCount} project${onboardingState.projectCount === 1 ? '' : 's'} on the board.` : 'Ship something small so people can see what you are building.';
+  [
+    [profileCard, state.profileReady],
+    [projectCard, state.hasProject],
+  ].forEach(([el, done]) => {
+    if (!el) return;
+    el.classList.toggle('complete', !!done);
+  });
+  if (state.allDone) {
+    dismissFirstVisitPanel();
+  }
+}
+
+function hydrateFirstVisitPanel(user) {
+  const suffix = document.getElementById('onboardingNameSuffix');
+  const rawName = String(user?.name || '').trim();
+  const firstName = rawName ? rawName.split(/\s+/)[0] : '';
+  onboardingState.user = user;
+  if (suffix) {
+    suffix.textContent = firstName ? `, ${firstName}` : '';
+  }
+  renderOnboardingChecklist();
+}
+
+function maybeShowFirstVisitPanel(user) {
+  const panel = document.getElementById('firstVisitPanel');
+  if (!panel || !user) return;
+  const forced = shouldForceShowFirstVisitPanel();
+  const state = getOnboardingChecklistState(user, onboardingState.projectCount);
+  if (!forced && state.allDone) return;
+  const hashView = window.location.hash.replace('#', '');
+  if (!forced && hashView && hashView !== 'events') return;
+  try {
+    if (!forced && localStorage.getItem(FIRST_VISIT_PANEL_KEY) === '1') return;
+  } catch {}
+  panel.hidden = false;
+  renderOnboardingChecklist();
+}
+
+function handleOnboardingAction(viewName) {
+  if (viewName === 'profile') {
+    window.location.href = '/profile?onboarding=1';
+    return;
+  }
+  if (viewName === 'project') {
+    switchToView('projects', { resetProjectContext: true });
+    document.getElementById('projectModal').classList.add('open');
+    return;
+  }
+  if (viewName === 'foyer') {
+    window.location.href = '/foyer';
+    return;
+  }
+  switchToView(viewName, { resetProjectContext: true });
+}
+
+function switchToView(viewName, options = {}) {
   document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
   document.querySelectorAll('.build-view').forEach(v => v.classList.remove('active'));
   const link = document.querySelector('.sidebar-link[data-view="' + viewName + '"]');
   const view = document.getElementById('view-' + viewName);
+  if (options.projectContext) {
+    projectSubmissionContext = options.projectContext;
+  } else if (options.resetProjectContext !== false) {
+    clearProjectSubmissionContext();
+  }
+  currentView = viewName;
   if (link) link.classList.add('active');
   if (view) view.classList.add('active');
+  renderContextualFab();
   history.replaceState(null, '', '#' + viewName);
 }
 
 document.querySelectorAll('.sidebar-link').forEach(link => {
-  link.addEventListener('click', () => switchToView(link.dataset.view));
+  link.addEventListener('click', () => switchToView(link.dataset.view, { resetProjectContext: true }));
 });
 
 // Deep-link: switch to tab based on URL hash
 const hashView = window.location.hash.replace('#', '');
 if (hashView && document.getElementById('view-' + hashView)) {
-  switchToView(hashView);
+  switchToView(hashView, { resetProjectContext: true });
+} else {
+  renderContextualFab();
 }
 
 // ─── Bounties ─────────────────────────────────────────────────────────────
@@ -549,13 +826,18 @@ async function loadBounties() {
       const statusClass = { open: 'open', claimed: 'claimed', completed: 'completed' }[b.status] || 'open';
       const statusLabel = { open: 'Open', claimed: 'Claimed', completed: 'Completed' }[b.status] || b.status;
       const tags = typeof b.tags === 'string' ? b.tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(t => `<span class="card-tag">${esc(t)}</span>`).join('') : '';
-      const deadline = b.deadline ? `<span class="bounty-deadline">⏳ ${esc(new Date(b.deadline).toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'}))}</span>` : '';
+      const deadlineState = formatBountyDeadlineState(b.deadline);
+      const deadline = deadlineState ? `<span class="bounty-deadline ${deadlineState.tone}">⏳ ${esc(deadlineState.label)}</span>` : '';
       const participantCount = Array.isArray(b.participants) ? b.participants.length : (b.participant_count || 0);
+      const participantLabel = participantCount === 1 ? 'hunter' : 'hunters';
       const baseAmt = Number(b.sats_amount || 0);
       const crowdAmt = Number(b.funded_amount || 0);
       const totalAmt = baseAmt + crowdAmt;
       const hasCrowd = crowdAmt > 0;
       const winner = b.winner_name ? `<div class="bc-winner">🏆 ${esc(b.winner_name)}</div>` : '';
+      const boostAction = b.status === 'completed'
+        ? ''
+        : `<a class="bc-boost-btn" href="/bounty/${esc(b.id)}" onclick="event.stopPropagation()">⚡ Boost</a>`;
       return `
         <div class="bounty-card status-${statusClass}" onclick="window.location.href='/bounty/${esc(b.id)}'" style="cursor:pointer">
           <div class="bc-top">
@@ -576,9 +858,9 @@ async function loadBounties() {
           </div>` : ''}
           ${winner}
           <div class="bc-footer">
-            <span class="bc-builders">👥 ${participantCount}</span>
+            <span class="bc-builders">👥 ${participantCount} ${participantLabel}</span>
             ${tags ? `<div class="bc-tags">${tags}</div>` : ''}
-            <a class="bc-boost-btn" href="/bounty/${esc(b.id)}" onclick="event.stopPropagation()">⚡ Boost</a>
+            ${boostAction}
           </div>
         </div>`;
     }).join('');
@@ -588,6 +870,89 @@ async function loadBounties() {
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────
+function shouldShowEventRecap(ev) {
+  return !!(window.LunarUiRules && window.LunarUiRules.shouldShowEventRecap(ev));
+}
+
+function getLeaderboardWonDisplay(count) {
+  return window.LunarUiRules ? window.LunarUiRules.getLeaderboardWonDisplay(count) : `${count || 0} won`;
+}
+
+function getLeaderboardCountDisplay(count, label = '') {
+  return window.LunarUiRules ? window.LunarUiRules.getLeaderboardCountDisplay(count, label) : `${count || 0}${label ? ` ${label}` : ''}`;
+}
+
+function getProjectStatusTone(status) {
+  return window.LunarUiRules ? window.LunarUiRules.getProjectStatusTone(status) : 'building';
+}
+
+function renderHeroAttendeeStack(ev) {
+  const attendees = Array.isArray(ev && ev.rsvps) ? ev.rsvps : [];
+  const totalCount = Number(ev && ev.rsvp_count || attendees.length || 0);
+  if (!totalCount) return '';
+  const avatarStack = attendees.slice(0, 4).map((attendee, index) => {
+    if (attendee.avatar) {
+      return `<span class="hero-attendee-avatar" style="z-index:${10 - index}"><img src="${esc(attendee.avatar)}" alt="" onerror="this.parentNode.textContent='${esc(((attendee.name || '?')[0] || '?').toUpperCase())}'"></span>`;
+    }
+    return `<span class="hero-attendee-avatar hero-attendee-avatar-fallback" style="z-index:${10 - index}">${esc(((attendee.name || '?')[0] || '?').toUpperCase())}</span>`;
+  }).join('');
+  return `<div class="hero-attendees"><div class="hero-attendee-stack">${avatarStack}</div><span class="hero-attendee-count">${totalCount} attending</span></div>`;
+}
+
+function getVisiblePastEvents(pastEvents) {
+  const list = Array.isArray(pastEvents) ? pastEvents : [];
+  const initialCount = window.LunarUiRules ? window.LunarUiRules.getInitialPastEventsVisibleCount() : 3;
+  return showAllPastEvents ? list : list.slice(0, initialCount);
+}
+
+function updatePastEventsToggle(pastEvents) {
+  const toggle = document.getElementById('pastEventsToggle');
+  if (!toggle) return;
+  const shouldShow = window.LunarUiRules && window.LunarUiRules.shouldShowPastEventsToggle(pastEvents);
+  toggle.style.display = shouldShow ? '' : 'none';
+  toggle.textContent = showAllPastEvents ? 'Show fewer past events' : 'View all past events';
+}
+
+function togglePastEvents() {
+  showAllPastEvents = !showAllPastEvents;
+  loadEvents();
+}
+
+async function syncHeroRsvpState() {
+  if (!heroEventData || !heroEventData.id) {
+    heroRsvpState = { userRsvp: false, loading: false };
+    return;
+  }
+  try {
+    const res = await fetch('/api/events/' + heroEventData.id + '/rsvps');
+    if (!res.ok) throw new Error('failed');
+    const data = await res.json();
+    heroRsvpState = { userRsvp: !!data.user_rsvp, loading: false };
+  } catch {
+    heroRsvpState = { userRsvp: false, loading: false };
+  }
+}
+
+async function toggleHeroRsvp() {
+  if (!heroEventData || !heroEventData.id || heroRsvpState.loading) return;
+  heroRsvpState = { ...heroRsvpState, loading: true };
+  renderHeroBanner(heroEventData);
+  try {
+    const method = heroRsvpState.userRsvp ? 'DELETE' : 'POST';
+    const res = await fetch('/api/events/' + heroEventData.id + '/rsvp', { method });
+    if (!res.ok && !(method === 'POST' && res.status === 409)) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'RSVP failed');
+    }
+    await syncHeroRsvpState();
+    renderHeroBanner(heroEventData);
+  } catch (err) {
+    heroRsvpState = { ...heroRsvpState, loading: false };
+    renderHeroBanner(heroEventData);
+    alert(err.message || 'RSVP failed');
+  }
+}
+
 async function loadEvents() {
   const grid = document.getElementById('eventsGrid');
   try {
@@ -596,14 +961,26 @@ async function loadEvents() {
 
     // Hero: next upcoming event
     const _now = new Date();
-    const _upcoming = eventsData.filter(ev => ev.date && new Date(ev.date) >= _now).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const _upcoming = eventsData
+      .filter(ev => {
+        const start = getEventStartDate(ev);
+        return start && start >= _now;
+      })
+      .sort((a, b) => getEventStartDate(a) - getEventStartDate(b));
     heroEventData = _upcoming[0] || null;
+    await syncHeroRsvpState();
     renderHeroBanner(heroEventData);
 
     // Split into upcoming and past events
     const now = new Date();
-    const upcomingEvents = eventsData.filter(ev => !ev.date || new Date(ev.date) >= new Date(now.toISOString().split('T')[0]));
-    const pastEvents = eventsData.filter(ev => ev.date && new Date(ev.date) < new Date(now.toISOString().split('T')[0]));
+    const upcomingEvents = eventsData.filter(ev => {
+      const start = getEventStartDate(ev);
+      return !start || start >= now;
+    });
+    const pastEvents = eventsData.filter(ev => {
+      const start = getEventStartDate(ev);
+      return start && start < now;
+    });
 
     if (!upcomingEvents.length && !pastEvents.length) {
       grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">📅</div><h3>No upcoming events</h3><p>Nothing scheduled yet — stay tuned</p></div>`;
@@ -629,9 +1006,10 @@ async function loadEvents() {
       const pastGrid = document.getElementById('pastEventsGrid');
       if (pastSection && pastGrid) {
         pastSection.style.display = 'block';
+        updatePastEventsToggle(pastEvents);
         const typeColors = { 'demo-day': 'rgba(124,92,252,0.08)', 'hackathon': 'rgba(57,217,138,0.06)', 'bounty': 'rgba(212,168,67,0.06)' };
         const typeBorders = { 'demo-day': 'rgba(124,92,252,0.15)', 'hackathon': 'rgba(57,217,138,0.12)', 'bounty': 'rgba(212,168,67,0.12)' };
-        pastGrid.innerHTML = pastEvents.map(ev => {
+        pastGrid.innerHTML = getVisiblePastEvents(pastEvents).map(ev => {
           const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'TBD';
           const evType = ev.event_type || ev.type || 'Event';
           const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆' };
@@ -640,6 +1018,7 @@ async function loadEvents() {
           const borderColor = typeBorders[evType] || 'var(--border)';
           const desc = (ev.description || '').slice(0, 80);
           const speakerCount = (ev.speakers || []).length;
+          const recapLabel = shouldShowEventRecap(ev) ? 'View Recap →' : 'View Event →';
           return `<div onclick="location.href='/event/${ev.id}'" style="cursor:pointer;background:${bgColor};border:1px solid ${borderColor};border-radius:var(--radius-lg);padding:16px 18px;transition:all .15s;opacity:0.85" onmouseenter="this.style.opacity='1';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'" onmouseleave="this.style.opacity='0.85';this.style.transform='none';this.style.boxShadow='none'">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
               <div style="font-size:0.88rem;font-weight:700;color:var(--text)">${icon} ${esc(ev.name)}</div>
@@ -647,21 +1026,21 @@ async function loadEvents() {
             </div>
             <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}${speakerCount ? ' · 🎤 ' + speakerCount + ' presenter' + (speakerCount !== 1 ? 's' : '') : ''}</div>
             ${desc ? `<div style="font-size:0.75rem;color:var(--muted2);line-height:1.5;margin-bottom:8px">${esc(desc)}${ev.description && ev.description.length > 80 ? '…' : ''}</div>` : ''}
-            <div style="font-size:0.72rem;color:var(--accent);font-weight:600">View Recap →</div>
+            <div style="font-size:0.72rem;color:var(--accent);font-weight:600">${recapLabel}</div>
           </div>`;
         }).join('');
       }
     }
     const counter = document.getElementById('eventCounter');
     if (counter && carouselEvents.length > 1) {
-      counter.innerHTML = `<button class="carousel-counter-nav" onclick="scrollCarousel(-1)">‹</button><span id="carouselPos">1 / ${carouselEvents.length}</span><button class="carousel-counter-nav" onclick="scrollCarousel(1)">›</button>`;
+      counter.innerHTML = `<span class="carousel-counter-label">Browse events</span><button class="carousel-counter-nav" aria-label="Previous event" onclick="scrollCarousel(-1)">‹</button><span id="carouselPos">Event 1 of ${carouselEvents.length}</span><button class="carousel-counter-nav" aria-label="Next event" onclick="scrollCarousel(1)">›</button>`;
       // Track scroll position
       const grid = document.getElementById('eventsGrid');
       grid.addEventListener('scroll', () => {
         const cardW = grid.querySelector('.event-card')?.offsetWidth || 300;
         const idx = Math.round(grid.scrollLeft / (cardW + 16)) + 1;
         const posEl = document.getElementById('carouselPos');
-        if (posEl) posEl.textContent = idx + ' / ' + carouselEvents.length;
+        if (posEl) posEl.textContent = `Event ${idx} of ${carouselEvents.length}`;
       });
     }
     startCountdowns();
@@ -669,10 +1048,11 @@ async function loadEvents() {
     eventsData.forEach(ev => loadEventBounties(ev.id));
 
     // Find next demo-day for speaker section
-    const demoDays = eventsData.filter(ev =>
-      (ev.event_type || ev.type || '').toLowerCase().includes('demo') &&
-      new Date(ev.date) > now
-    ).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const demoDays = eventsData.filter(ev => {
+      if (!(ev.event_type || ev.type || '').toLowerCase().includes('demo')) return false;
+      const start = getEventStartDate(ev);
+      return !!(start && start > now);
+    }).sort((a, b) => getEventStartDate(a) - getEventStartDate(b));
     if (demoDays.length) {
       nextDemoDay = demoDays[0];
       loadSpeakers();
@@ -702,6 +1082,11 @@ function renderHeroBanner(ev) {
   const calDay = evDate ? evDate.getDate() : '?';
   const calMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   const calWeekday = evDate ? evDate.toLocaleDateString('en', { weekday: 'short' }) : '';
+  const heroRsvpLabel = heroRsvpState.loading
+    ? 'Saving…'
+    : (heroRsvpState.userRsvp ? '✓ Going' : '👥 RSVP');
+  const heroRsvpClass = heroRsvpState.userRsvp ? 'btn btn-primary' : 'btn';
+  const heroRsvpDisabled = heroRsvpState.loading ? 'disabled' : '';
   hero.innerHTML = `
     <div class="event-hero-banner ${typeClass}" style="display:flex;align-items:stretch;gap:24px">
       <div style="flex:1;min-width:0">
@@ -710,6 +1095,7 @@ function renderHeroBanner(ev) {
         <h2 class="event-hero-title">${esc(ev.name)}</h2>
         ${ev.location ? `<div class="event-hero-meta">📍 ${esc(ev.location)}</div>` : ''}
         ${desc ? `<p class="event-hero-desc">${esc(desc)}</p>` : ''}
+        ${renderHeroAttendeeStack(ev)}
         <div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Event starts in</div>
         <div class="event-hero-countdown">
           <div class="countdown-chip"><div class="countdown-chip-val" id="hero-cd-d">--</div><div class="countdown-chip-label">Days</div></div>
@@ -719,7 +1105,7 @@ function renderHeroBanner(ev) {
         </div>
         <div class="event-hero-cta">
           <a href="/event/${esc(ev.id)}" class="btn btn-primary" style="padding:10px 28px;font-size:0.9rem">View Event →</a>
-          <a href="/event/${esc(ev.id)}" class="btn" style="padding:10px 28px;font-size:0.9rem;border-color:var(--border2)">RSVP</a>
+          <button type="button" onclick="toggleHeroRsvp()" ${heroRsvpDisabled} class="${heroRsvpClass}" style="padding:10px 28px;font-size:0.9rem;border-color:var(--border2)">${heroRsvpLabel}</button>
         </div>
       </div>
       <div class="hero-cal-tile" style="border-color:${heroColor}">
@@ -730,10 +1116,23 @@ function renderHeroBanner(ev) {
     </div>`;
 }
 
+function formatSecondaryEventDateLabel(ev) {
+  if (!ev?.date) return 'Date TBD';
+  const eventDate = getEventStartDate(ev);
+  if (!eventDate) return 'Start time TBD';
+  const dateLabel = eventDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+  const now = new Date();
+  const statusLabel = eventDate.getTime() < now.getTime()
+    ? 'Ended'
+    : (ev.location || ev.virtual_link ? (ev.location || 'Virtual') : 'Upcoming');
+  return `${dateLabel} · ${statusLabel}`;
+}
+
 function renderEventCard(ev) {
   const dateStr = ev.date
     ? new Date(ev.date).toLocaleDateString('en', { weekday:'short', month:'short', day:'numeric', year:'numeric' })
     : 'TBD';
+  const secondaryDateLabel = formatSecondaryEventDateLabel(ev);
   const evType = ev.event_type || ev.type || 'Event';
   const speakerCount = (ev.speakers || []).length;
   const typeColors = { 'demo-day': '#7c5cfc', 'hackathon': '#39d98a', 'bounty': '#d4a843', 'workshop': '#3CCBDA', 'meetup': '#f472b6' };
@@ -744,7 +1143,7 @@ function renderEventCard(ev) {
   const cardDay = evDate ? evDate.getDate() : '?';
   const cardMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   return `
-    <div class="event-card" onclick="window.location='/event/${ev.id}'" style="cursor:pointer;position:relative">
+    <a href="/event/${esc(ev.id)}" class="event-card" style="cursor:pointer;position:relative">
       <div style="height:6px;background:${color};border-radius:var(--radius-lg) var(--radius-lg) 0 0;margin:-20px -20px 16px -20px"></div>
       <div class="card-cal-badge" style="border-color:${color}">
         <div class="card-cal-month" style="color:${color}">${cardMonth}</div>
@@ -761,14 +1160,9 @@ function renderEventCard(ev) {
         <div style="display:flex;gap:12px;margin-top:10px;font-size:0.78rem;color:var(--muted)">
           <span>👥 ${speakerCount} speaker${speakerCount !== 1 ? 's' : ''}</span>
         </div>
-        <div class="event-countdown" id="countdown-${esc(ev.id)}" style="margin-top:12px">
-          <div class="countdown-chip"><div class="countdown-chip-val" id="cd-d-${esc(ev.id)}">--</div><div class="countdown-chip-label">Days</div></div>
-          <div class="countdown-chip"><div class="countdown-chip-val" id="cd-h-${esc(ev.id)}">--</div><div class="countdown-chip-label">Hrs</div></div>
-          <div class="countdown-chip"><div class="countdown-chip-val" id="cd-m-${esc(ev.id)}">--</div><div class="countdown-chip-label">Min</div></div>
-          <div class="countdown-chip"><div class="countdown-chip-val" id="cd-s-${esc(ev.id)}">--</div><div class="countdown-chip-label">Sec</div></div>
-        </div>
+        <div class="event-secondary-date">${esc(secondaryDateLabel)}</div>
       </div>
-    </div>`;
+    </a>`;
 }
 
 function toggleRsvp(id) {
@@ -800,7 +1194,8 @@ function updateCountdowns() {
 
   // Hero countdown
   if (heroEventData && heroEventData.date) {
-    const heroDate = new Date(heroEventData.date + (heroEventData.time ? 'T' + heroEventData.time : 'T00:00'));
+    const heroDate = getEventStartDate(heroEventData);
+    if (!heroDate) return;
     const hDiff = heroDate.getTime() - now;
     if (hDiff > 0) {
       const hSet = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v).padStart(2, '0'); };
@@ -811,28 +1206,8 @@ function updateCountdowns() {
     }
   }
 
-  eventsData.forEach(ev => {
-    if (!ev.date) return;
-    const eventDate = new Date(ev.date + (ev.time ? 'T' + ev.time : 'T00:00'));
-    const diff = eventDate.getTime() - now;
-    const id = ev.id;
-    const container = document.getElementById('countdown-' + id);
-    if (!container) return;
-
-    if (diff > 0) {
-      const days = Math.floor(diff / 86400000);
-      const hrs  = Math.floor((diff % 86400000) / 3600000);
-      const mins = Math.floor((diff % 3600000) / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      const set = (u, v) => { const el = document.getElementById('cd-' + u + '-' + id); if (el) el.textContent = String(v).padStart(2,'0'); };
-      set('d', days); set('h', hrs); set('m', mins); set('s', secs);
-    } else if (diff > -86400000) {
-      container.innerHTML = '<div class="event-status-live"><span class="live-dot"></span> LIVE NOW</div>';
-    } else {
-      container.innerHTML = '<div class="event-status-ended">Event Ended</div>';
-    }
-  });
 }
+
 
 function startCountdowns() {
   updateCountdowns();
@@ -900,14 +1275,18 @@ function renderMiniCal() {
     let content = '';
     const evTypeColors = { 'demo-day': '#7c5cfc', 'hackathon': '#39d98a', 'bounty': '#d4a843', 'workshop': '#3CCBDA', 'meetup': '#f472b6' };
     let evColor = '';
+    let titleAttr = '';
     if (hasEvent) {
       const evType = events[0].type || events[0].event_type || 'demo-day';
       evColor = evTypeColors[evType] || '#7c5cfc';
       const icons = events.map(ev => getEventIcon(ev.type || ev.event_type || 'demo-day')).join('');
-      content = `<div class="cal-cell-content">${icons}</div>`;
+      const markers = events.slice(0, 3).map(ev => `<span class="cal-event-dot" style="--ev-color:${evTypeColors[ev.type || ev.event_type || 'demo-day'] || '#7c5cfc'}"></span>`).join('');
+      const label = events.map(ev => ev.name).join(' · ');
+      titleAttr = ` title="${esc(label)}" aria-label="${esc(label)}"`;
+      content = `<div class="cal-cell-content">${icons}</div><div class="cal-event-markers">${markers}</div>`;
     }
 
-    days += `<div class="cal-cell${todayCls}${eventCls}"${click}${evColor ? ` style="--ev-color:${evColor}"` : ''}>
+    days += `<div class="cal-cell${todayCls}${eventCls}"${click}${titleAttr}${evColor ? ` style="--ev-color:${evColor}"` : ''}>
       <div class="cal-cell-num">${d}</div>
       ${content}
     </div>`;
@@ -1080,9 +1459,10 @@ async function loadProjects() {
 
 let allProjects = [];
 let activeProjectTag = null;
-
 function renderProjectTags(projects) {
   const tagBar = document.getElementById('projectTagBar');
+  const hint = document.getElementById('projectTagOverflowHint');
+  if (!tagBar) return;
   const tagSet = new Set();
   projects.forEach(p => {
     if (p.category) tagSet.add(p.category);
@@ -1091,6 +1471,27 @@ function renderProjectTags(projects) {
   const tags = [...tagSet].sort();
   tagBar.innerHTML = `<div class="tag-chip ${!activeProjectTag ? 'active' : ''}" onclick="filterProjects(null)">All</div>` +
     tags.map(t => `<div class="tag-chip ${activeProjectTag === t ? 'active' : ''}" onclick="filterProjects('${t}')">${t}</div>`).join('');
+  if (hint) hint.style.display = tags.length > 5 ? '' : 'none';
+}
+
+function renderProjectsSparseCta(projectCount) {
+  const cta = document.getElementById('projectsSparseCta');
+  if (!cta) return;
+  if (projectCount > 3) {
+    cta.style.display = 'none';
+    cta.innerHTML = '';
+    return;
+  }
+  cta.style.display = '';
+  cta.innerHTML = `
+    <div class="projects-sparse-cta-card">
+      <div>
+        <div class="projects-sparse-kicker">Keep the momentum up</div>
+        <div class="projects-sparse-title">Submit your first project</div>
+        <div class="projects-sparse-copy">The grid is still early. Turn the empty space into signal by sharing what you are building.</div>
+      </div>
+      <button class="btn btn-primary" onclick="document.getElementById('projectModal').classList.add('open')">+ Submit your first project</button>
+    </div>`;
 }
 
 function filterProjects(tag) {
@@ -1107,6 +1508,7 @@ function renderProjects(projects) {
   allProjects = projects;
   renderProjectTags(projects);
   renderProjectCards(projects);
+  renderProjectsSparseCta(projects.length);
 }
 
 function renderProjectCards(projects) {
@@ -1122,25 +1524,26 @@ function renderProjectCards(projects) {
     const bountyTag = p.bounty_title ? `<span class="bounty-status open" style="font-size:0.6rem">⚡ ${esc(p.bounty_title)}</span>` : '';
     const catTag = p.category ? `<span class="card-tag cat-${esc(p.category)}">${esc(p.category)}</span>` : '';
     const links = [
-      (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">⌥ Repo</a>` : '',
-      (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link" onclick="event.stopPropagation()">↗ Demo</a>` : ''
+      (p.repo_url||p.repo) ? `<a href="${esc(p.repo_url||p.repo)}" target="_blank" rel="noopener" class="spk-link project-card-link" onclick="event.stopPropagation()">Repository ↗</a>` : '',
+      (p.demo_url||p.demo) ? `<a href="${esc(p.demo_url||p.demo)}" target="_blank" rel="noopener" class="spk-link project-card-link" onclick="event.stopPropagation()">Live Demo ↗</a>` : ''
     ].filter(Boolean).join('');
     const satsLabel = p.total_sats_received > 0
       ? `<span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--btc-bright);opacity:.85">⚡${Number(p.total_sats_received).toLocaleString()}</span>`
       : '';
     const visualSrc = p.banner_url || p.thumbnail_url || projectVisual(p.name, p.category, 400, 120);
+    const statusTone = getProjectStatusTone(p.status);
     const isOwner = _currentUser && (p.user_id === _currentUser.id || _currentUser.is_admin);
     const editBannerBtn = isOwner ? `<button class="proj-banner-edit-btn" onclick="event.stopPropagation(); triggerBannerUpload('${esc(p.id)}')" title="${p.banner_url ? 'Change banner' : 'Add banner'}">📷</button>` : '';
     return `
-      <div class="project-card" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
+      <div class="project-card project-card-${statusTone}" id="proj-${esc(p.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
         <div style="position:relative">
           <img class="project-card-visual" src="${visualSrc}" alt="">
           ${editBannerBtn}
         </div>
         <div class="project-card-body">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
             <div class="project-name">${esc(p.name)}</div>
-            <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
+            <span class="project-status-pill project-status-pill-${statusTone}">${statusLabel}</span>
           </div>
           <div class="project-builder">by ${p.user_id ? `<a href="/profile/${esc(p.user_id)}" class="profile-link" onclick="event.stopPropagation()">${esc(p.builder)}</a>` : esc(p.builder)}</div>
           <div class="project-desc">${esc(p.description)}</div>
@@ -1189,6 +1592,8 @@ async function submitProject() {
     document.getElementById('projBountyId').value = '';
     document.getElementById('projBountyLabel').style.display = 'none';
     document.getElementById('projectModal').classList.remove('open');
+    onboardingState.projectCount = Number(onboardingState.projectCount || 0) + 1;
+    renderOnboardingChecklist();
     const res = await fetch('/api/projects');
     renderProjects(await res.json());
   } catch {
@@ -1430,6 +1835,7 @@ function openProjectForBounty(bountyId, bountyTitle) {
   document.getElementById('projBountyId').value = bountyId;
   document.getElementById('projBountyLabel').textContent = 'For bounty: ' + bountyTitle;
   document.getElementById('projBountyLabel').style.display = 'block';
+  switchToView('projects', { projectContext: { bountyId, bountyTitle } });
   document.getElementById('projectModal').classList.add('open');
 }
 
@@ -1454,12 +1860,25 @@ async function loadProjectDecksDropdown() {
     const r = await fetch('/api/decks?limit=48');
     const data = await r.json();
     const sel = document.getElementById('projDeckId');
+    const copy = document.getElementById('projDeckFieldCopy');
     if (!sel) return;
-    (data.decks||[]).forEach(d => {
+    const decks = data.decks || [];
+    sel.innerHTML = '';
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = decks.length ? 'Choose a presentation…' : 'No uploaded decks yet';
+    sel.appendChild(defaultOption);
+    decks.forEach(d => {
       const o = document.createElement('option');
-      o.value = d.id; o.textContent = d.title;
+      o.value = d.id;
+      o.textContent = d.title;
       sel.appendChild(o);
     });
+    if (copy) {
+      copy.textContent = decks.length
+        ? `Pick one of your ${decks.length} uploaded presentation${decks.length === 1 ? '' : 's'} so people can jump straight into the deck from this project.`
+        : 'No decks yet — upload one from Decks first, then come back and link it here.';
+    }
   } catch {}
 }
 
@@ -1471,7 +1890,7 @@ async function createEvent() {
   const date = document.getElementById('newEventDate').value;
   const time = document.getElementById('newEventTime').value || null;
   const location = document.getElementById('newEventLocation').value.trim() || null;
-  if (!name || !date) return alert('Name and date required');
+  if (!name || !date || !time) return alert('Name, date, and time required');
   try {
     const r = await fetch('/api/events', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,description,event_type,date,time,location}) });
     if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error||'Failed'); return; }
@@ -1633,9 +2052,9 @@ async function loadLeaderboard(sort) {
           </div>
           <div class="lb-bar-wrap"><div class="lb-bar-fill" style="width:${barPct}%"></div></div>
           <div class="lb-stat lb-sats">${primaryStat(u)}</div>
-          ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${Number(u.zaps_sent || 0).toLocaleString()}</div>` : ''}
-          ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${u.projects_count}</div>` : ''}
-          <div class="lb-stat lb-meta">🏆 ${u.bounties_won} won</div>
+          ${sort === 'earners' ? `<div class="lb-stat lb-meta" title="Zaps sent">🤙 ${getLeaderboardCountDisplay(u.zaps_sent)}</div>` : ''}
+          ${sort !== 'projects' ? `<div class="lb-stat lb-meta">📦 ${getLeaderboardCountDisplay(u.projects_count)}</div>` : ''}
+          <div class="lb-stat lb-meta">🏆 ${getLeaderboardWonDisplay(u.bounties_won)}</div>
         </div>`;
     }).join('') + `</div>`;
   } catch {
@@ -1677,14 +2096,36 @@ if (window.location.hash === '#leaderboard' && !_lbLoaded) {
 }
 </script>
 <script src="/js/auth.js"></script>
-<script>initAuth(function(user) {
+<script>initAuth(async function(user) {
   var bi = document.getElementById('projBuilder');
   if (bi && !bi.value) bi.value = user.name || user.email || '';
   var spk = document.getElementById('spkName');
   if (spk && !spk.value) spk.value = user.name || '';
+  try {
+    const ownProjects = await fetch('/api/users/' + encodeURIComponent(user.id) + '/projects').then(r => r.json());
+    onboardingState.projectCount = Array.isArray(ownProjects) ? ownProjects.length : 0;
+  } catch {
+    onboardingState.projectCount = 0;
+  }
+  hydrateFirstVisitPanel(user);
+  maybeShowFirstVisitPanel(user);
 });</script>
-<button class="fab" title="Submit Project" onclick="document.getElementById('projectModal').classList.add('open')"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="fab-label">Submit Project</span></button>
-<script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
+<button class="fab" id="contextualFab" title="Present Project" data-action="present"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="fab-label">Present Project</span></button>
+<script>
+const contextualFab = document.getElementById('contextualFab');
+if (contextualFab) {
+  contextualFab.addEventListener('click', () => {
+    if (contextualFab.dataset.action === 'project') {
+      document.getElementById('projectModal').classList.add('open');
+      return;
+    }
+    if (contextualFab.dataset.action === 'present') {
+      document.getElementById('speakerModal').classList.add('open');
+    }
+  });
+}
+document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});
+</script>
 <input type="file" id="bannerFileInput" accept="image/*" style="display:none">
 <div class='modal-overlay' id='bannerCropModal'>
   <div class='modal-content' style='max-width:500px'>
@@ -1700,80 +2141,3 @@ if (window.location.hash === '#leaderboard' && !_lbLoaded) {
         <button class='btn' onclick='if(_bnCropper)_bnCropper.reset()' title='Reset' style='padding:6px 10px;font-size:.8rem'>Reset</button>
       </div>
       <div style='display:flex;gap:8px'>
-        <button class='btn' onclick='closeBannerCrop()'>Cancel</button>
-        <button class='btn btn-primary' id='bannerCropSaveBtn' onclick='saveBannerCrop()'>Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-let _bnCropper = null;
-let _bnProjectId = null;
-
-function triggerBannerUpload(projectId) {
-  _bnProjectId = projectId;
-  const input = document.getElementById('bannerFileInput');
-  input.value = '';
-  input.onchange = function() {
-    if (!this.files[0]) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = document.getElementById('bannerCropImage');
-      img.src = e.target.result;
-      document.getElementById('bannerCropModal').classList.add('open');
-      if (_bnCropper) { _bnCropper.destroy(); _bnCropper = null; }
-      img.onload = () => {
-        _bnCropper = new Cropper(img, {
-          aspectRatio: 16/9,
-          viewMode: 0,
-          dragMode: 'move',
-          cropBoxResizable: true,
-          cropBoxMovable: true,
-          background: true,
-          guides: false,
-          center: true,
-          highlight: false,
-          autoCropArea: 0.8,
-          zoomable: true,
-          zoomOnWheel: true,
-        });
-      };
-    };
-    reader.readAsDataURL(this.files[0]);
-  };
-  input.click();
-}
-
-function closeBannerCrop() {
-  document.getElementById('bannerCropModal').classList.remove('open');
-  if (_bnCropper) { _bnCropper.destroy(); _bnCropper = null; }
-}
-
-async function saveBannerCrop() {
-  if (!_bnCropper || !_bnProjectId) return;
-  const btn = document.getElementById('bannerCropSaveBtn');
-  btn.disabled = true; btn.textContent = 'Saving...';
-  const canvas = _bnCropper.getCroppedCanvas({ maxWidth: 800, maxHeight: 450, fillColor: '#fff' });
-  canvas.toBlob(async (blob) => {
-    const fd = new FormData();
-    fd.append('banner', blob, 'banner.jpg');
-    try {
-      const r = await fetch('/api/projects/' + _bnProjectId + '/banner', { method: 'POST', body: fd });
-      if (r.ok) {
-        const data = await r.json();
-        const card = document.getElementById('proj-' + _bnProjectId);
-        if (card) {
-          const img = card.querySelector('.project-card-visual');
-          if (img) img.src = data.banner_url + '?t=' + Date.now();
-        }
-      } else { alert('Upload failed'); }
-    } catch { alert('Upload failed'); }
-    btn.disabled = false; btn.textContent = 'Save';
-    closeBannerCrop();
-  }, 'image/jpeg', 0.9);
-}
-
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBannerCrop(); });
-</script>
-</body>
-</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LunarPad — Build. Ship. Earn sats.</title>
+<title>Decks — LunarPad</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -24,7 +24,8 @@
 <div class="container">
   <div class="toolbar">
     <div class="search-box">
-      <input type="text" id="search" placeholder="Search presentations...">
+      <span class="search-box-icon">⌕</span>
+      <input type="text" id="search" placeholder="Search decks and presentations...">
     </div>
     <select class="sort-select" id="sort">
       <option value="newest" selected>Newest first</option>
@@ -34,7 +35,10 @@
     </select>
   </div>
 
-  <div class="tag-bar" id="tagBar"></div>
+  <div class="tag-bar-wrap decks-tag-bar-wrap" id="decksTagBarWrap">
+    <div class="tag-bar" id="tagBar"></div>
+  </div>
+  <div class="tag-overflow-hint decks-tag-overflow-hint" id="decksTagOverflowHint">Scroll for more deck filters →</div>
   <div class="gallery" id="gallery">
     <div class="skeleton-card" style="height:220px"></div>
     <div class="skeleton-card" style="height:220px"></div>
@@ -46,7 +50,7 @@
   <div class="pagination" id="pagination"></div>
 </div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
   let currentPage = 1;
@@ -99,15 +103,36 @@
     }
   }
 
+  function getDecksEmptyStateCopy() {
+    if (window.LunarUiRules?.getDecksEmptyStateCopy) {
+      return window.LunarUiRules.getDecksEmptyStateCopy(currentSearch);
+    }
+    return {
+      title: 'No presentations yet',
+      body: 'Be the first to upload an HTML presentation',
+      ctaLabel: 'Upload Your Deck',
+      ctaAction: "document.getElementById('uploadModal').classList.add('open')",
+    };
+  }
+
+  function clearSearch() {
+    currentSearch = '';
+    currentPage = 1;
+    const input = document.getElementById('search');
+    if (input) input.value = '';
+    loadDecks();
+  }
+
   function renderGallery(decks) {
     const el = document.getElementById('gallery');
     if (!decks.length) {
+      const empty = getDecksEmptyStateCopy();
       el.innerHTML = `
         <div class="empty-state">
           <div class="icon">🎭</div>
-          <h3>No presentations yet</h3>
-          <p>Be the first to upload an HTML presentation</p>
-          <button class="btn btn-primary" onclick="document.getElementById('uploadModal').classList.add('open')">Upload Your Deck</button>
+          <h3>${esc(empty.title)}</h3>
+          <p>${esc(empty.body)}</p>
+          <button class="btn btn-primary" onclick="${empty.ctaAction}">${esc(empty.ctaLabel)}</button>
         </div>`;
       return;
     }
@@ -128,11 +153,13 @@
           ${thumb}
           <div class="card-body">
             <div class="card-title">${esc(d.title)}</div>
-            <div class="card-meta">
-              <span>${d.uploaded_by ? `<a href="/profile/${esc(d.uploaded_by)}" class="profile-link" onclick="event.stopPropagation()">${esc(d.author)}</a>` : esc(d.author)}</span>
-              <span>${date}</span>
-              <span>${d.views} view${d.views !== 1 ? 's' : ''}</span>
-              <span style="color:var(--accent);font-size:0.75rem">▲ ${votes}</span>
+            <div class="card-meta card-meta-primary">
+              <span class="card-meta-author">${d.uploaded_by ? `<a href="/profile/${esc(d.uploaded_by)}" class="profile-link" onclick="event.stopPropagation()">${esc(d.author)}</a>` : esc(d.author)}</span>
+              <span class="card-meta-date">${date}</span>
+            </div>
+            <div class="card-meta card-meta-secondary">
+              <span class="card-meta-stat">👁 ${d.views} view${d.views !== 1 ? 's' : ''}</span>
+              <span class="card-meta-stat card-meta-votes">▲ ${votes}</span>
             </div>
             ${tags ? `<div class="card-tags">${tags}</div>` : ''}
           </div>

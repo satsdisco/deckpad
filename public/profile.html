@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css'>
 <script src='https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js'></script>
+<script src="/js/ui-rules.js"></script>
 <style>
 .cropper-modal { background: rgba(0,0,0,0.7) !important; }
 .cropper-view-box { outline: 2px solid var(--accent) !important; outline-color: rgba(124,92,252,0.75) !important; }
@@ -61,7 +62,7 @@
   </div>
 </div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
 function esc(s) { const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
@@ -82,6 +83,114 @@ const ALL_BADGES = [
 
 const pathParts = window.location.pathname.split('/').filter(Boolean);
 let profileId = pathParts.length > 1 ? pathParts[1] : null;
+
+function hasProfileOnboardingIntent() {
+  try {
+    return new URLSearchParams(window.location.search).get('onboarding') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function clearProfileOnboardingIntent() {
+  if (!hasProfileOnboardingIntent()) return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('onboarding');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch {}
+}
+
+function getProfileOnboardingChecklist(user) {
+  return [
+    {
+      key: 'bio',
+      label: 'Bio',
+      done: !!String(user?.bio || '').trim(),
+      actionLabel: 'Edit bio',
+      action: 'bio',
+    },
+    {
+      key: 'links',
+      label: 'Links',
+      done: !!(String(user?.website_url || '').trim() || String(user?.github_url || '').trim()),
+      actionLabel: 'Add links',
+      action: 'links',
+    },
+    {
+      key: 'lightning',
+      label: 'Lightning',
+      done: !!String(user?.lightning_address || '').trim(),
+      actionLabel: 'Add lightning',
+      action: 'lightning',
+    },
+    {
+      key: 'availability',
+      label: 'Availability',
+      done: !!(String(user?.skills || '').trim() || user?.available_hours !== null && user?.available_hours !== undefined && user?.available_hours !== ''),
+      actionLabel: 'Set availability',
+      action: 'availability',
+    },
+  ];
+}
+
+function focusProfileOnboardingAction(action) {
+  if (action === 'bio') {
+    enterBioEditMode();
+    document.getElementById('bioInput')?.focus();
+    return;
+  }
+  if (action === 'links') {
+    enterLinksEditMode();
+    document.getElementById('websiteInput')?.focus();
+    return;
+  }
+  if (action === 'lightning') {
+    enterLnEditMode();
+    document.getElementById('lnInput')?.focus();
+    return;
+  }
+  if (action === 'availability') {
+    toggleAvailabilityEditor(true);
+    document.getElementById('availHours')?.focus();
+  }
+}
+
+function renderProfileOnboardingCard(user, isOwn) {
+  if (!isOwn || !hasProfileOnboardingIntent()) return '';
+  const checklist = getProfileOnboardingChecklist(user);
+  const completed = checklist.filter(item => item.done).length;
+  const remaining = checklist.filter(item => !item.done);
+  const subtitle = remaining.length
+    ? `You came here from onboarding. Knock out the missing profile basics, then jump back into Build.`
+    : 'Your profile basics are set. Jump back into Build and keep shipping.';
+  return `
+    <section class="profile-onboarding-card">
+      <div class="profile-onboarding-head">
+        <div>
+          <div class="profile-onboarding-kicker">Onboarding handoff</div>
+          <h2 class="profile-onboarding-title">Finish your profile setup</h2>
+          <p class="profile-onboarding-copy">${subtitle}</p>
+        </div>
+        <button class="profile-onboarding-dismiss" type="button" onclick="clearProfileOnboardingIntent(); this.closest('.profile-onboarding-card').remove();">Hide setup guide</button>
+      </div>
+      <div class="profile-onboarding-progress">${completed}/${checklist.length} profile basics done</div>
+      <div class="profile-onboarding-steps">
+        ${checklist.map(item => `
+          <div class="profile-onboarding-step${item.done ? ' done' : ''}">
+            <span class="profile-onboarding-step-label">${item.label}</span>
+            <span class="profile-onboarding-step-state">${item.done ? 'Done' : 'Missing'}</span>
+            ${item.done ? `<span class="profile-onboarding-step-copy">Looks good.</span>` : `<button class="btn btn-sm" type="button" onclick="focusProfileOnboardingAction('${item.action}')">${item.actionLabel}</button>`}
+          </div>
+        `).join('')}
+      </div>
+      <div class="profile-onboarding-actions">
+        <a class="btn btn-primary" href="/build?showOnboarding=1#events">Back to Build</a>
+        ${remaining.length ? `<button class="btn btn-sm" type="button" onclick="clearProfileOnboardingIntent();">Continue below</button>` : ''}
+      </div>
+    </section>
+  `;
+}
 
 function showAchievementToast(badge) {
   const toast = document.createElement('div');
@@ -275,11 +384,31 @@ function cancelLinksEdit() {
 
 async function saveAvailability() {
   const skills = [...document.querySelectorAll('#skillChips .role-chip.active')].map(c => c.dataset.role);
-  const available_hours = parseInt(document.getElementById('availHours')?.value) || null;
+  const hoursInput = document.getElementById('availHours');
+  const hoursValue = hoursInput ? String(hoursInput.value || '').trim() : '';
+  const available_hours = hoursValue === '' ? null : parseInt(hoursValue, 10);
   try {
     const res = await fetch('/api/me/availability', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ skills, available_hours }) });
-    if (res.ok) { const btn = document.querySelector('#skillChips + div .btn'); if (btn) { btn.textContent = 'Saved!'; setTimeout(() => btn.textContent = 'Save', 1500); } }
+    if (res.ok) {
+      window.location.reload();
+      return;
+    }
   } catch {}
+}
+
+function toggleAvailabilityEditor(forceOpen) {
+  const editor = document.getElementById('availabilityEditor');
+  const summary = document.getElementById('availabilitySummary');
+  const toggle = document.getElementById('availabilityToggle');
+  if (!editor) return;
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : editor.style.display === 'none';
+  editor.style.display = shouldOpen ? 'block' : 'none';
+  if (summary) summary.style.display = shouldOpen ? 'none' : '';
+  if (toggle) toggle.textContent = shouldOpen ? 'Cancel' : (toggle.dataset.defaultLabel || 'Edit');
+}
+
+function replayBuildOnboarding() {
+  window.location.href = '/build?showOnboarding=1#events';
 }
 
 async function saveLinks() {
@@ -334,7 +463,7 @@ async function loadProfile() {
     const memberSince = new Date(user.created_at).toLocaleDateString('en', {month:'long', year:'numeric'});
     const earnedBadges = Array.isArray(user.badges) ? user.badges : [];
     window.__profileEarnedBadges = earnedBadges;
-    window.__profileData = { bio: user.bio || null, website_url: user.website_url || null, github_url: user.github_url || null };
+    window.__profileData = { bio: user.bio || null, website_url: user.website_url || null, github_url: user.github_url || null, banner_preset: user.banner_preset || null };
 
     // ── Stats bar ──
     const statsBar = `
@@ -433,6 +562,7 @@ async function loadProfile() {
 
     // ── Badges ──
     const earnedCount = ALL_BADGES.filter(b => earnedBadges.includes(b.id)).length;
+    const badgeProgressPct = Math.round((earnedCount / ALL_BADGES.length) * 100);
     const badgesHtml = ALL_BADGES.map(b => {
       const earned = earnedBadges.includes(b.id);
       if (earned) {
@@ -493,10 +623,14 @@ async function loadProfile() {
 
     // ── Badge pills (earned only, shown in header for all) ──
     const earnedBadgeObjects = ALL_BADGES.filter(b => earnedBadges.includes(b.id));
-    const badgePillsHtml = earnedBadgeObjects.length
-      ? `<div class="profile-badges-pills">${earnedBadgeObjects.map(b =>
-          `<span class="profile-badge-pill earned" title="${esc(b.desc)}">${b.emoji} ${esc(b.name)}</span>`
-        ).join('')}</div>`
+    const scheduledBadgePills = user.upcoming_presenter && !earnedBadges.includes('presenter')
+      ? [`<span class="profile-badge-pill profile-scheduled-badge-pill" title="Booked to present at an upcoming demo day">🗓 Upcoming Presenter</span>`]
+      : [];
+    const earnedBadgePills = earnedBadgeObjects.map(b =>
+      `<span class="profile-badge-pill earned" title="${esc(b.desc)}">${b.emoji} ${esc(b.name)}</span>`
+    );
+    const badgePillsHtml = (scheduledBadgePills.length || earnedBadgePills.length)
+      ? `<div class="profile-badges-pills">${scheduledBadgePills.join('')}${earnedBadgePills.join('')}</div>`
       : '';
 
     // ── Avatar with initials fallback ──
@@ -545,18 +679,32 @@ async function loadProfile() {
           : '');
 
     // ── Badges tab: own profile only ──
+    const bannerPresetOptions = (window.LunarUiRules ? window.LunarUiRules.getProfileBannerPresets() : []).map(preset => `
+      <button type="button" class="banner-preset-chip${user.banner_preset === preset.id ? ' active' : ''}" data-preset="${preset.id}" onclick="saveBannerPreset('${preset.id}', this)">${preset.label}</button>
+    `).join('');
     const badgesTabHtml = isOwn
       ? `<div class="profile-tab-view" id="ptab-badges">
-          <div class="badges-grid" style="margin-top:8px">${badgesHtml}</div>
+          <div class="badge-progress-card">
+            <div class="badge-progress-copy">
+              <strong>${earnedCount}/${ALL_BADGES.length}</strong> badges unlocked
+              <span>${badgeProgressPct}% complete</span>
+            </div>
+            <div class="badge-progress-bar"><div class="badge-progress-fill" style="width:${badgeProgressPct}%"></div></div>
+          </div>
+          <div class="badges-grid" style="margin-top:12px">${badgesHtml}</div>
         </div>`
       : '';
     const badgesTabBtn = isOwn
       ? `<button class="profile-tab" onclick="switchProfileTab('badges', event)">Badges (${earnedCount}/${ALL_BADGES.length})</button>`
       : '';
 
+    const onboardingCard = renderProfileOnboardingCard(user, isOwn);
+
     content.innerHTML = `
+      ${onboardingCard}
       <div class="profile-banner-wrap">
         <div class="profile-banner" id="profileBanner"></div>
+        ${isOwn ? `<div class="banner-preset-picker" id="bannerPresetPicker">${bannerPresetOptions}</div>` : ''}
         <div class="profile-header">
           <div class="profile-header-top">
             ${avatarHtml}
@@ -587,24 +735,37 @@ async function loadProfile() {
 
       ${isOwn ? `
       <div class="profile-section">
-        <div class="profile-section-title">Availability</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px" id="skillChips">
-          ${['Designer','Frontend Dev','Backend Dev','Lightning Dev','Marketing','Tester'].map(r =>
-            `<button type="button" class="role-chip ${(user.skills || '').split(',').map(s=>s.trim()).includes(r) ? 'active' : ''}" data-role="${r}" onclick="this.classList.toggle('active')">${r}</button>`
-          ).join('')}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div class="profile-section-title" style="margin-bottom:0">Availability</div>
+          <button class="btn btn-sm" type="button" id="availabilityToggle" data-default-label="${(user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '') ? 'Edit' : 'Set availability'}" onclick="toggleAvailabilityEditor()">${(user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '') ? 'Edit' : 'Set availability'}</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <label style="font-size:0.75rem;color:var(--muted)">Hours/week:</label>
-          <input type="number" id="availHours" min="0" max="80" value="${user.available_hours || ''}" placeholder="0" style="width:60px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.8rem">
-          <button class="btn btn-sm" onclick="saveAvailability()">Save</button>
+        <div id="availabilitySummary">
+          ${(user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '') ? `
+            ${(user.skills || '').trim() ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '' ? '10px' : '0'}">${user.skills.split(',').map(s => `<span class="looking-for-badge">${esc(s.trim())}</span>`).join('')}</div>` : ''}
+            ${user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '' ? `<div style="font-size:0.78rem;color:var(--muted)">${esc(String(user.available_hours))}h/week available</div>` : ''}
+          ` : `<div style="font-size:0.78rem;color:var(--muted);line-height:1.55">Hide this until you want it public. Add roles and weekly capacity when you actually want collaborators to know your availability.</div>`}
+          <div style="margin-top:12px">
+            <button class="btn btn-sm" type="button" onclick="replayBuildOnboarding()">Replay onboarding</button>
+          </div>
         </div>
-      </div>` : (user.skills ? `
+        <div id="availabilityEditor" style="display:none;margin-top:12px">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px" id="skillChips">
+            ${['Designer','Frontend Dev','Backend Dev','Lightning Dev','Marketing','Tester'].map(r =>
+              `<button type="button" class="role-chip ${(user.skills || '').split(',').map(s=>s.trim()).includes(r) ? 'active' : ''}" data-role="${r}" onclick="this.classList.toggle('active')">${r}</button>`
+            ).join('')}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label style="font-size:0.75rem;color:var(--muted)" for="availHours">Hours/week</label>
+            <input type="number" id="availHours" min="0" max="80" value="${window.LunarUiRules ? window.LunarUiRules.getAvailabilityInputValue(user.available_hours) : (user.available_hours ?? '')}" placeholder="Set hours" style="width:96px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.8rem">
+            <button class="btn btn-sm" type="button" onclick="saveAvailability()">Save</button>
+            <button class="btn btn-sm" type="button" onclick="toggleAvailabilityEditor(false)">Cancel</button>
+          </div>
+        </div>
+      </div>` : ((user.skills || user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '') ? `
       <div class="profile-section">
-        <div class="profile-section-title">Skills</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${user.skills.split(',').map(s => `<span class="looking-for-badge">${esc(s.trim())}</span>`).join('')}
-        </div>
-        ${user.available_hours ? `<div style="font-size:0.75rem;color:var(--muted);margin-top:8px">${user.available_hours}h/week available</div>` : ''}
+        <div class="profile-section-title">Availability</div>
+        ${(user.skills || '').trim() ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${user.skills.split(',').map(s => `<span class="looking-for-badge">${esc(s.trim())}</span>`).join('')}</div>` : ''}
+        ${user.available_hours !== null && user.available_hours !== undefined && user.available_hours !== '' ? `<div style="font-size:0.75rem;color:var(--muted);margin-top:${(user.skills || '').trim() ? '8px' : '0'}">${user.available_hours}h/week available</div>` : ''}
       </div>` : '')}
 
       ${activityChart}
@@ -706,13 +867,14 @@ function renderProjectCard(p) {
     ? `<span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--btc-bright);opacity:.85">⚡${Number(p.total_sats_received).toLocaleString()}</span>`
     : '';
   const visualSrc = p.thumbnail_url || p.banner_url || projectVisual(p.name, p.category, 400, 120);
+  const statusTone = window.LunarUiRules ? window.LunarUiRules.getProjectStatusTone(p.status) : 'building';
   return `
-    <div class="project-card" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link'))window.location='/project/${p.id}'" style="cursor:pointer">
+    <div class="project-card project-card-${statusTone}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link'))window.location='/project/${p.id}'" style="cursor:pointer">
       <img class="project-card-visual" src="${visualSrc}" alt="">
       <div class="project-card-body">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
           <div class="project-name">${esc(p.name)}</div>
-          <span class="card-tag cat-${p.status === 'shipped' ? 'productivity' : 'tool'}" style="font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${statusLabel}</span>
+          <span class="project-status-pill project-status-pill-${statusTone}">${statusLabel}</span>
         </div>
         <div class="project-desc">${esc(p.description)}</div>
         <div class="card-tags" style="margin-bottom:10px">${catTag}${bountyTag}${tags}</div>
@@ -777,30 +939,63 @@ function renderBountyItem(b, isOwn) {
 }
 
 
-loadProfile().then(() => {
-  // Generate profile banner gradient from user name
+function applyProfileBanner(presetId) {
   const banner = document.getElementById('profileBanner');
-  if (banner) {
-    const name = document.title.replace(' — LunarPad', '') || 'User';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    const h = Math.abs(hash);
-    const hue1 = h % 360;
-    const hue2 = (h * 7 + 60) % 360;
-    const hue3 = (h * 13 + 180) % 360;
-    // Sharp gradient with geometric shapes — no blur
-    const shapes = Array.from({length: 8}, (_, i) => {
-      const cx = (h * (i+3) * 17) % 800;
-      const cy = (h * (i+7) * 11) % 140;
-      const r = 40 + ((h * (i+11)) % 100);
-      const opacity = 0.06 + ((h * (i+5)) % 8) / 100;
-      const hue = (hue1 + i * 45) % 360;
-      return `<circle cx='${cx}' cy='${cy}' r='${r}' fill='hsla(${hue},50%,40%,${opacity})'/>`;
-    }).join('');
-    const svgPattern = encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='800' height='140'>${shapes}<text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-family='system-ui' font-size='60' font-weight='900' fill='rgba(255,255,255,0.02)'>${name.charAt(0).toUpperCase()}</text></svg>`);
-    banner.style.background = `url("data:image/svg+xml,${svgPattern}"), linear-gradient(135deg, hsla(${hue1},55%,18%,1) 0%, hsla(${hue2},45%,12%,1) 50%, hsla(${hue3},35%,8%,1) 100%)`;
+  if (!banner) return;
+  const presetStyles = {
+    'lunar-dawn': 'linear-gradient(135deg, rgba(124,92,252,0.95), rgba(85,132,255,0.55), rgba(13,15,26,1))',
+    'saturn-violet': 'linear-gradient(135deg, rgba(61,26,92,1), rgba(124,92,252,0.7), rgba(248,181,0,0.28))',
+    'bitcoin-sunset': 'linear-gradient(135deg, rgba(212,168,67,0.95), rgba(245,123,32,0.6), rgba(34,12,58,1))'
+  };
+  if (presetStyles[presetId]) {
+    banner.style.background = presetStyles[presetId];
     banner.style.backgroundSize = 'cover';
+    return;
   }
+  const name = document.title.replace(' — LunarPad', '') || 'User';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  const h = Math.abs(hash);
+  const hue1 = h % 360;
+  const hue2 = (h * 7 + 60) % 360;
+  const hue3 = (h * 13 + 180) % 360;
+  const shapes = Array.from({length: 8}, (_, i) => {
+    const cx = (h * (i+3) * 17) % 800;
+    const cy = (h * (i+7) * 11) % 140;
+    const r = 40 + ((h * (i+11)) % 100);
+    const opacity = 0.06 + ((h * (i+5)) % 8) / 100;
+    const hue = (hue1 + i * 45) % 360;
+    return `<circle cx='${cx}' cy='${cy}' r='${r}' fill='hsla(${hue},50%,40%,${opacity})'/>`;
+  }).join('');
+  const svgPattern = encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='800' height='140'>${shapes}<text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-family='system-ui' font-size='60' font-weight='900' fill='rgba(255,255,255,0.02)'>${name.charAt(0).toUpperCase()}</text></svg>`);
+  banner.style.background = `url("data:image/svg+xml,${svgPattern}"), linear-gradient(135deg, hsla(${hue1},55%,18%,1) 0%, hsla(${hue2},45%,12%,1) 50%, hsla(${hue3},35%,8%,1) 100%)`;
+  banner.style.backgroundSize = 'cover';
+}
+
+async function saveBannerPreset(presetId, btn) {
+  try {
+    const data = window.__profileData || {};
+    const res = await fetch('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bio: data.bio || null, website_url: data.website_url || null, github_url: data.github_url || null, banner_preset: presetId })
+    });
+    if (!res.ok) throw new Error('Failed');
+    if (window.__profileData) window.__profileData.banner_preset = presetId;
+    document.querySelectorAll('.banner-preset-chip').forEach((chip) => chip.classList.toggle('active', chip.dataset.preset === presetId));
+    applyProfileBanner(presetId);
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = 'Saved';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    }
+  } catch {
+    alert('Failed to save banner preset');
+  }
+}
+
+loadProfile().then(() => {
+  applyProfileBanner(window.__profileData && window.__profileData.banner_preset);
 
   // CountUp animation for stat numbers
   const SATS_TARGET = document.querySelector('.profile-stat-value.gold[data-target]');

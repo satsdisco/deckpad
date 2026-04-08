@@ -1,6 +1,7 @@
 node_modules/
 uploads/
 thumbnails/
+avatars/
 temp/
 deckpad.db
 .DS_Store

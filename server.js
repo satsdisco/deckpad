@@ -12,6 +12,15 @@ const { DatabaseSync } = require('node:sqlite');
 const puppeteer = require('puppeteer');
 const cookieSession = require('cookie-session');
 const QRCode = require('qrcode');
+const { filterPublicLeaderboardRows } = require('./public/js/ui-rules.js');
+const {
+  filterPublicComments,
+  filterPublicIdeas,
+  filterPublicProjects,
+  hasBlockedCommentContent,
+  isPlaceholderIdea,
+  isPlaceholderProject,
+} = require('./content-rules.js');
 let sharp;
 try { sharp = require('sharp'); } catch { sharp = null; }
 
@@ -132,6 +141,9 @@ db.exec(`
     github_url    TEXT,
     demo_url      TEXT,
     deck_id       TEXT,
+    scheduled_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    status        TEXT DEFAULT 'scheduled',
+    presented_at  TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (event_id) REFERENCES events(id)
   );
@@ -326,6 +338,79 @@ const MIGRATIONS = [
   { name: 'v017_speaker_user_id', sql: [
     'ALTER TABLE speakers ADD COLUMN user_id TEXT',
   ]},
+  { name: 'v018_user_banner_preset', sql: [
+    'ALTER TABLE users ADD COLUMN banner_preset TEXT',
+  ]},
+  { name: 'v019_speaker_presented_state', sql: [
+    'ALTER TABLE speakers ADD COLUMN scheduled_at TEXT',
+    "ALTER TABLE speakers ADD COLUMN status TEXT DEFAULT 'scheduled'",
+    'ALTER TABLE speakers ADD COLUMN presented_at TEXT',
+    "UPDATE speakers SET scheduled_at = COALESCE(scheduled_at, created_at, datetime('now'))",
+    "UPDATE speakers SET status = CASE WHEN presented_at IS NOT NULL THEN 'presented' ELSE COALESCE(status, 'scheduled') END",
+    'CREATE INDEX IF NOT EXISTS idx_speakers_user_status ON speakers(user_id, status, presented_at)',
+  ]},
+  { name: 'v021_speaker_schedule_repair', sql: [
+    'ALTER TABLE speakers ADD COLUMN scheduled_at TEXT',
+    "UPDATE speakers SET scheduled_at = COALESCE(scheduled_at, created_at, datetime('now'))",
+  ]},
+  { name: 'v020_lunar_hangout_phase0', sql: [
+    "ALTER TABLE live_sessions ADD COLUMN mode TEXT DEFAULT 'demo-day-live'",
+    "ALTER TABLE live_sessions ADD COLUMN status TEXT DEFAULT 'idle'",
+    'ALTER TABLE live_sessions ADD COLUMN voting_open INTEGER DEFAULT 0',
+    'ALTER TABLE live_sessions ADD COLUMN current_started_at TEXT',
+    'ALTER TABLE live_sessions ADD COLUMN current_duration_minutes INTEGER DEFAULT 10',
+    'ALTER TABLE live_sessions ADD COLUMN winner_speaker_id TEXT',
+    'ALTER TABLE live_sessions ADD COLUMN winner_confirmed_at TEXT',
+    "ALTER TABLE live_sessions ADD COLUMN payout_status TEXT DEFAULT 'pending'",
+    'ALTER TABLE live_sessions ADD COLUMN meet_url TEXT',
+    'ALTER TABLE live_sessions ADD COLUMN ended_at TEXT',
+    'ALTER TABLE speakers ADD COLUMN queue_position INTEGER',
+    'ALTER TABLE speakers ADD COLUMN skipped_at TEXT',
+    `CREATE TABLE IF NOT EXISTS event_results (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL UNIQUE,
+      winner_speaker_id TEXT,
+      winner_name TEXT,
+      winner_project_title TEXT,
+      total_votes INTEGER DEFAULT 0,
+      total_zaps INTEGER DEFAULT 0,
+      results_json TEXT,
+      summary_markdown TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_event_results_event ON event_results(event_id)',
+    `UPDATE live_sessions
+      SET mode = COALESCE(mode, 'demo-day-live'),
+          status = CASE
+            WHEN COALESCE(is_active, 0) = 1 THEN 'live'
+            ELSE COALESCE(status, 'idle')
+          END,
+          voting_open = COALESCE(voting_open, 0),
+          current_duration_minutes = COALESCE(current_duration_minutes, 10),
+          payout_status = COALESCE(payout_status, 'pending'),
+          meet_url = COALESCE(meet_url, (SELECT virtual_link FROM events WHERE events.id = live_sessions.event_id))`,
+    `UPDATE speakers
+      SET queue_position = (
+        SELECT COUNT(*)
+        FROM speakers s2
+        WHERE s2.event_id = speakers.event_id
+          AND (
+            COALESCE(s2.scheduled_at, s2.created_at, datetime('now')) < COALESCE(speakers.scheduled_at, speakers.created_at, datetime('now'))
+            OR (
+              COALESCE(s2.scheduled_at, s2.created_at, datetime('now')) = COALESCE(speakers.scheduled_at, speakers.created_at, datetime('now'))
+              AND s2.id <= speakers.id
+            )
+          )
+      )
+      WHERE queue_position IS NULL`,
+    `UPDATE speakers
+      SET status = CASE
+        WHEN presented_at IS NOT NULL THEN 'presented'
+        WHEN skipped_at IS NOT NULL THEN 'skipped'
+        ELSE COALESCE(status, 'scheduled')
+      END`,
+    'CREATE INDEX IF NOT EXISTS idx_speakers_event_queue ON speakers(event_id, queue_position, status)',
+  ]},
 ];
 
 // Run pending migrations
@@ -417,7 +502,7 @@ function checkAndAwardBadges(userId) {
     }
   }
   if (!has('presenter')) {
-    const pres = db.prepare('SELECT id FROM speakers WHERE name = ?').get(user.name);
+    const pres = db.prepare('SELECT s.id FROM speakers s WHERE s.user_id = ? AND s.presented_at IS NOT NULL LIMIT 1').get(userId);
     if (pres) badges.push('presenter');
   }
   if (!has('bounty_hunter')) {
@@ -435,6 +520,19 @@ function cachedBadgeCheck(userId) {
   if (now - last < 60000) return;
   badgeCheckCache.set(userId, now);
   checkAndAwardBadges(userId);
+}
+
+function getUpcomingPresenterState(userId) {
+  if (!userId) return false;
+  const upcoming = db.prepare(`
+    SELECT s.id
+    FROM speakers s
+    WHERE s.user_id = ?
+      AND COALESCE(s.status, 'scheduled') = 'scheduled'
+      AND s.presented_at IS NULL
+    LIMIT 1
+  `).get(userId);
+  return !!upcoming;
 }
 
 // ─── Slug helpers ────────────────────────────────────────────────────────────
@@ -473,7 +571,9 @@ const stmts = {
   deleteVotes:   db.prepare('DELETE FROM votes WHERE target_type = ? AND target_id = ?'),
   insertNotification: db.prepare('INSERT INTO notifications (id, user_id, type, actor_id, actor_name, target_type, target_id, target_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
   getUnreadCount:     db.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read = 0'),
+  getNotificationsCount: db.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ?'),
   getRecentNotifs:    db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30'),
+  getNotificationsPage: db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'),
   markNotifRead:      db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?'),
   markAllNotifsRead:  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0'),
   insertIdea:    db.prepare('INSERT INTO ideas (id, title, description, user_id, slug, total_sats_received) VALUES (?, ?, ?, ?, ?, 0)'),
@@ -538,12 +638,22 @@ app.use((req, res, next) => {
   next();
 });
 
+function isLocalDevAutoLoginRequest(req) {
+  const host = String(req.hostname || '').toLowerCase();
+  return !process.env.BASE_URL && ['localhost', '127.0.0.1', '::1'].includes(host);
+}
+
+function isStagingQaHost(req) {
+  const host = String(req.hostname || '').toLowerCase();
+  return host === 'decks.satsdisco.com';
+}
+
 app.use((req, res, next) => {
   if (req.session && req.session.userId) {
     req.user = stmts.getUserById.get(req.session.userId);
   }
-  // Auto-login as dev user in local development (no BASE_URL set)
-  if (!req.user && !process.env.BASE_URL) {
+  // Auto-login as dev user in local development only
+  if (!req.user && isLocalDevAutoLoginRequest(req)) {
     const which = req.session?.devUser || 'alice';
     let devUser = db.prepare("SELECT * FROM users WHERE username = ?").get(which);
     if (!devUser) {
@@ -712,11 +822,22 @@ app.post('/auth/login', (req, res) => {
 
 // Dev user switcher (local only)
 app.get('/dev/switch/:name', (req, res) => {
-  if (process.env.BASE_URL) return res.status(404).send('Not found');
+  if (!isLocalDevAutoLoginRequest(req)) return res.status(404).send('Not found');
   const name = req.params.name;
   if (!['alice', 'bob'].includes(name)) return res.status(400).send('Use /dev/switch/alice or /dev/switch/bob');
   req.session.devUser = name;
   req.session.userId = null;
+  res.redirect('/');
+});
+
+app.get('/auth/staging-login/:username', (req, res) => {
+  if (!isStagingQaHost(req)) return res.status(404).send('Not found');
+  const username = String(req.params.username || '').toLowerCase();
+  if (!username.startsWith('stg_')) return res.status(400).send('Staging QA login only supports stg_ accounts');
+  const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(404).send('Staging QA user not found');
+  req.session.devUser = null;
+  req.session.userId = user.id;
   res.redirect('/');
 });
 
@@ -731,7 +852,7 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   if (req.user) {
-    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin, lightning_address: req.user.lightning_address || null, bio: req.user.bio || null, website_url: req.user.website_url || null, github_url: req.user.github_url || null, has_google: !!req.user.google_id, skills: req.user.skills || null, available_hours: req.user.available_hours || null } });
+    res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, avatar: req.user.avatar, is_admin: !!req.user.is_admin, lightning_address: req.user.lightning_address || null, bio: req.user.bio || null, website_url: req.user.website_url || null, github_url: req.user.github_url || null, banner_preset: req.user.banner_preset || null, has_google: !!req.user.google_id, skills: req.user.skills || null, available_hours: req.user.available_hours || null } });
   } else {
     res.json({ user: null });
   }
@@ -741,8 +862,9 @@ app.get('/api/me', (req, res) => {
 app.put('/api/me/availability', requireAuth, (req, res) => {
   const { skills, available_hours } = req.body;
   const skillsStr = Array.isArray(skills) ? skills.join(',') : (skills || null);
-  const hours = available_hours ? parseInt(available_hours) : null;
-  db.prepare('UPDATE users SET skills = ?, available_hours = ? WHERE id = ?').run(skillsStr, hours, req.user.id);
+  const hasAvailability = available_hours !== null && available_hours !== undefined && String(available_hours).trim() !== '';
+  const hours = hasAvailability ? parseInt(available_hours, 10) : null;
+  db.prepare('UPDATE users SET skills = ?, available_hours = ? WHERE id = ?').run(skillsStr, Number.isNaN(hours) ? null : hours, req.user.id);
   res.json({ ok: true });
 });
 
@@ -752,6 +874,13 @@ function requireAuth(req, res, next) {
   if (req.user) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Login required' });
   res.redirect('/welcome');
+}
+
+
+function canManageProject(project, user) {
+  if (!project || !user) return false;
+  if (user.is_admin) return true;
+  return !!project.user_id && user.id === project.user_id;
 }
 
 
@@ -798,6 +927,7 @@ app.get('/event/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'pub
 app.get('/project/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'project.html')));
 app.get('/profile', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
 app.get('/profile/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'profile.html')));
+app.get('/notifications', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'notifications.html')));
 app.get('/vote',     requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'vote.html')));
 app.get('/admin',    requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'admin.html')));
 app.get('/bounty/:id', requireAuth, (_, res) => res.sendFile(path.join(ROOT, 'public', 'bounty.html')));
@@ -1127,6 +1257,24 @@ app.get('/api/events', requireAuth, (req, res) => {
       WHERE s.event_id = ?
       ORDER BY votes DESC, s.created_at ASC
     `).all(ev.id);
+    ev.rsvps = db.prepare(`
+      SELECT r.id, r.name, r.user_id, u.avatar
+      FROM rsvps r
+      LEFT JOIN users u ON r.user_id = u.id
+      WHERE r.event_id = ?
+      ORDER BY r.created_at ASC
+      LIMIT 5
+    `).all(ev.id);
+    ev.rsvp_count = db.prepare('SELECT COUNT(*) as c FROM rsvps WHERE event_id = ?').get(ev.id)?.c || 0;
+    const resultSummary = getStoredEventResults(ev.id);
+    ev.result_summary = resultSummary ? {
+      id: resultSummary.id,
+      created_at: resultSummary.created_at,
+      winner_name: resultSummary.winner_name,
+      winner_project_title: resultSummary.winner_project_title,
+      total_votes: Number(resultSummary.total_votes || 0),
+      total_zaps: Number(resultSummary.total_zaps || 0),
+    } : null;
   }
   res.json(rows);
 });
@@ -1135,6 +1283,7 @@ app.post('/api/events', requireAuth, (req, res) => {
   const { name, description, event_type, date, time, location, virtual_link } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
+  if (!time) return res.status(400).json({ error: 'time required' });
   const id = crypto.randomUUID();
   db.prepare(`INSERT INTO events (id, name, description, event_type, date, time, location, virtual_link)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
@@ -1523,16 +1672,18 @@ app.put('/api/profile/lightning', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// PUT /api/profile — update bio, website_url, github_url
+// PUT /api/profile — update bio, website_url, github_url, banner preset
 app.put('/api/profile', requireAuth, (req, res) => {
-  const { bio, website_url, github_url } = req.body;
+  const { bio, website_url, github_url, banner_preset } = req.body;
   const b = typeof bio === 'string' ? bio.trim().slice(0, 160) : null;
   const w = typeof website_url === 'string' ? website_url.trim().slice(0, 512) : null;
   const g = typeof github_url === 'string' ? github_url.trim().slice(0, 512) : null;
+  const allowedBannerPresets = new Set(['lunar-dawn', 'saturn-violet', 'bitcoin-sunset']);
+  const bannerPreset = allowedBannerPresets.has(String(banner_preset || '').trim()) ? String(banner_preset).trim() : null;
   if (w && !isValidUrl(w)) return res.status(400).json({ error: 'website_url must be a valid http/https URL' });
   if (g && !isValidUrl(g)) return res.status(400).json({ error: 'github_url must be a valid http/https URL' });
-  db.prepare('UPDATE users SET bio = ?, website_url = ?, github_url = ? WHERE id = ?').run(b || null, w || null, g || null, req.user.id);
-  res.json({ ok: true });
+  db.prepare('UPDATE users SET bio = ?, website_url = ?, github_url = ?, banner_preset = ? WHERE id = ?').run(b || null, w || null, g || null, bannerPreset, req.user.id);
+  res.json({ ok: true, banner_preset: bannerPreset });
 });
 
 // POST /api/profile/avatar — upload profile photo
@@ -1563,7 +1714,7 @@ app.post('/api/profile/avatar', requireAuth, avatarUpload.single('avatar'), asyn
 app.post('/api/projects/:id/banner', requireAuth, bannerUpload.single('banner'), async (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) { if (req.file) fs.unlinkSync(req.file.path); return res.status(404).json({ error: 'Not found' }); }
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     if (req.file) fs.unlinkSync(req.file.path);
     return res.status(403).json({ error: 'Not authorized' });
   }
@@ -1593,7 +1744,7 @@ app.post('/api/projects/:id/banner', requireAuth, bannerUpload.single('banner'),
 app.post('/api/projects/:id/thumbnail', requireAuth, avatarUpload.single('thumbnail'), async (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) { if (req.file) fs.unlinkSync(req.file.path); return res.status(404).json({ error: 'Not found' }); }
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     if (req.file) fs.unlinkSync(req.file.path);
     return res.status(403).json({ error: 'Not authorized' });
   }
@@ -1736,6 +1887,63 @@ app.get('/api/decks/:id/zaps', (req, res) => {
   res.json({ zaps, total_sats: row?.total || 0 });
 });
 
+// POST /api/speakers/:id/zap — generate invoice to zap this presenter
+app.post('/api/speakers/:id/zap', requireAuth, async (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  const amount_sats = parseInt(req.body.amount_sats);
+  if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'amount_sats required' });
+  if (amount_sats > 10_000_000) return res.status(400).json({ error: 'amount_sats exceeds maximum (10M sats)' });
+
+  let recipientAddress = null;
+  let recipient = speaker.name;
+
+  if (speaker.user_id) {
+    const presenter = db.prepare('SELECT name, lightning_address FROM users WHERE id = ?').get(speaker.user_id);
+    if (presenter?.lightning_address) {
+      recipientAddress = presenter.lightning_address;
+      recipient = presenter.name || speaker.name;
+    }
+  }
+  if (!recipientAddress && speaker.name) {
+    const presenter = db.prepare("SELECT name, lightning_address FROM users WHERE name = ? AND lightning_address IS NOT NULL LIMIT 1").get(speaker.name);
+    if (presenter?.lightning_address) {
+      recipientAddress = presenter.lightning_address;
+      recipient = presenter.name || speaker.name;
+    }
+  }
+
+  try {
+    const webhookUrl = (process.env.BASE_URL || `http://localhost:${PORT}`) + '/api/webhook/lnbits';
+    const lnbitsInv = await lnbitsCreateInvoice(amount_sats, `Zap: ${speaker.project_title} by ${speaker.name}`, webhookUrl);
+    const zapId = crypto.randomUUID();
+    db.prepare(`INSERT INTO zaps (id, target_type, target_id, user_id, user_name, amount_sats, payment_request, payment_hash, verify_url, status, recipient_address)
+      VALUES (?, 'speaker', ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`).run(
+      zapId, speaker.id,
+      req.user.id, req.user.name || req.user.email,
+      amount_sats, lnbitsInv.payment_request, lnbitsInv.payment_hash, recipientAddress
+    );
+    const qrData = 'lightning:' + lnbitsInv.payment_request.toUpperCase();
+    const qr_data_url = await makeQrDataUrl(qrData);
+    res.json({ zap_id: zapId, payment_request: lnbitsInv.payment_request, qr_data_url, recipient });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// GET /api/speakers/:id/zaps — confirmed zaps for this speaker
+app.get('/api/speakers/:id/zaps', (req, res) => {
+  const zaps = db.prepare(
+    `SELECT id, user_id, user_name, amount_sats, created_at
+     FROM zaps WHERE target_type = 'speaker' AND target_id = ? AND status = 'confirmed'
+     ORDER BY created_at DESC LIMIT 20`
+  ).all(req.params.id);
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(amount_sats), 0) as total FROM zaps WHERE target_type = 'speaker' AND target_id = ? AND status = 'confirmed'`
+  ).get(req.params.id);
+  res.json({ zaps, total_sats: row?.total || 0 });
+});
+
 // GET /api/zaps/verify/:zap_id — check payment via LNbits API or verify URL
 app.get('/api/zaps/verify/:zap_id', async (req, res) => {
   const zap = db.prepare('SELECT * FROM zaps WHERE id = ?').get(req.params.zap_id);
@@ -1775,6 +1983,12 @@ app.get('/api/zaps/verify/:zap_id', async (req, res) => {
         if (idea?.user_id) {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
           notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
+        }
+      } else if (zap.target_type === 'speaker') {
+        const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+        if (speaker?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+          notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
         }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
@@ -1835,6 +2049,12 @@ app.post('/api/zaps/confirm/:zap_id', requireAuth, (req, res) => {
       db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
       notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
     }
+  } else if (zap.target_type === 'speaker') {
+    const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+    if (speaker?.user_id) {
+      db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+      notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
+    }
   }
   if (zap.user_id) cachedBadgeCheck(zap.user_id);
   autoForwardZap(zap).catch(e => console.error('[confirm autoForward]', e.message));
@@ -1878,6 +2098,12 @@ app.post('/api/webhook/lnbits', async (req, res) => {
           db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, idea.user_id);
           notify(idea.user_id, 'zap', zap.user_id, zapperName, 'idea', zap.target_id, idea.title);
         }
+      } else if (zap.target_type === 'speaker') {
+        const speaker = db.prepare('SELECT user_id, name, project_title FROM speakers WHERE id = ?').get(zap.target_id);
+        if (speaker?.user_id) {
+          db.prepare(`UPDATE users SET total_sats_received = total_sats_received + ? WHERE id = ?`).run(zap.amount_sats, speaker.user_id);
+          notify(speaker.user_id, 'zap', zap.user_id, zapperName, 'speaker', zap.target_id, speaker.project_title || speaker.name);
+        }
       }
       if (zap.user_id) cachedBadgeCheck(zap.user_id);
       autoForwardZap(zap).catch(e => console.error('[webhook autoForward]', e.message));
@@ -1909,7 +2135,7 @@ app.post('/api/webhook/lnbits', async (req, res) => {
 app.delete('/api/projects/:id', requireAuth, (req, res) => {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Not found' });
-  if (p.user_id && p.user_id !== req.user?.id && !req.user?.is_admin) return res.status(403).json({ error: 'Not authorized' });
+  if (!canManageProject(p, req.user)) return res.status(403).json({ error: 'Not authorized' });
   db.prepare('DELETE FROM comments WHERE deck_id = ?').run(req.params.id); // reuse comments table
   db.prepare('DELETE FROM votes WHERE target_type = ? AND target_id = ?').run('project', req.params.id);
   db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
@@ -1931,14 +2157,40 @@ app.delete('/api/speakers/:id', requireAuth, (req, res) => {
 app.get('/api/events/:id', (req, res) => {
   const event = db.prepare('SELECT *, event_type as type FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Not found' });
-  const speakers = db.prepare(`
-    SELECT s.*, s.project_title as project, COALESCE(v.vote_count, 0) as votes
-    FROM speakers s
-    LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'speaker' GROUP BY target_id) v ON s.id = v.target_id
-    WHERE s.event_id = ?
-    ORDER BY votes DESC, s.created_at ASC
-  `).all(req.params.id);
-  res.json({ ...event, speakers });
+  const livePayload = getLiveSessionPayload(req.params.id);
+  const eventResults = getStoredEventResults(req.params.id);
+  const speakers = livePayload?.speakers?.length
+    ? livePayload.speakers.slice().sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))
+    : db.prepare(`
+      SELECT s.*, s.project_title as project, COALESCE(v.vote_count, 0) as votes
+      FROM speakers s
+      LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'speaker' GROUP BY target_id) v ON s.id = v.target_id
+      WHERE s.event_id = ?
+      ORDER BY votes DESC, s.created_at ASC
+    `).all(req.params.id);
+  const live_summary = livePayload?.session ? {
+    status: livePayload.session.status,
+    payout_status: livePayload.session.payout_status,
+    winner_confirmed_at: livePayload.session.winner_confirmed_at || null,
+    winner: livePayload.winner || null,
+    winner_recommendation: livePayload.winner_recommendation || null,
+    results_url: livePayload.results_url || null,
+  } : null;
+  const result_summary = eventResults ? {
+    id: eventResults.id,
+    created_at: eventResults.created_at,
+    winner_name: eventResults.winner_name,
+    winner_project_title: eventResults.winner_project_title,
+    total_votes: Number(eventResults.total_votes || 0),
+    total_zaps: Number(eventResults.total_zaps || 0),
+  } : null;
+  res.json({
+    ...event,
+    speakers,
+    live_summary,
+    result_summary,
+    event_results: eventResults?.results || null,
+  });
 });
 
 // ─── Speakers API ─────────────────────────────────────────────────────────────
@@ -1967,17 +2219,37 @@ app.post('/api/speakers', requireAuth, (req, res) => {
   const eid = event_id || eventId;
   const ptitle = project_title || project;
   if (!eid || !name || !ptitle) return res.status(400).json({ error: 'event_id, name, project_title required' });
-  const event = db.prepare('SELECT id FROM events WHERE id = ?').get(eid);
+  const event = db.prepare('SELECT id, virtual_link FROM events WHERE id = ?').get(eid);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id, user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  const nextQueuePosition = (db.prepare('SELECT COALESCE(MAX(queue_position), 0) + 1 as next_pos FROM speakers WHERE event_id = ?').get(eid)?.next_pos) || 1;
+  db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id, user_id, scheduled_at, status, queue_position)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'scheduled', ?)`).run(
     id, eid, name.trim(), ptitle.trim(),
     description || null, parseInt(duration) || 10,
-    github_url || null, demo_url || null, deck_id || null, req.user?.id || null
+    github_url || null, demo_url || null, deck_id || null, req.user?.id || null, nextQueuePosition
   );
-  if (req.user?.id) cachedBadgeCheck(req.user.id);
   res.json({ id });
+});
+
+app.post('/api/speakers/:id/presented', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  db.prepare(`
+    UPDATE speakers
+    SET presented_at = COALESCE(presented_at, datetime('now')),
+        status = 'presented'
+    WHERE id = ?
+  `).run(req.params.id);
+  if (speaker.user_id) checkAndAwardBadges(speaker.user_id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/speakers/:id/presented', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  db.prepare("UPDATE speakers SET presented_at = NULL, status = 'scheduled' WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
 });
 
 app.get('/api/events/:id/speakers', (req, res) => {
@@ -2013,7 +2285,13 @@ app.delete('/api/events/:id/rsvp', requireAuth, (req, res) => {
 });
 
 app.get('/api/events/:id/rsvps', (req, res) => {
-  const rows = db.prepare('SELECT * FROM rsvps WHERE event_id = ? ORDER BY created_at ASC').all(req.params.id);
+  const rows = db.prepare(`
+    SELECT r.*, u.avatar, u.id as profile_user_id, u.username, u.name as profile_name
+    FROM rsvps r
+    LEFT JOIN users u ON r.user_id = u.id
+    WHERE r.event_id = ?
+    ORDER BY r.created_at ASC
+  `).all(req.params.id);
   const user_rsvp = req.user ? !!db.prepare('SELECT 1 FROM rsvps WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id) : false;
   res.json({ rsvps: rows, count: rows.length, user_rsvp });
 });
@@ -2035,13 +2313,14 @@ app.get('/api/projects', (req, res) => {
   }
   query += ` ORDER BY votes DESC, p.created_at DESC`;
   const rows = db.prepare(query).all(...params);
-  res.json(rows);
+  res.json(filterPublicProjects(rows));
 });
 
 app.post('/api/projects', requireAuth, (req, res) => {
   const { name, builder, description, status, tags, category, bounty_id, repo_url, repo, demo_url, demo } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!builder || !builder.trim()) return res.status(400).json({ error: 'builder required' });
+  if (isPlaceholderProject({ name, description })) return res.status(400).json({ error: 'Project looks like placeholder content' });
   const id = crypto.randomUUID();
   const slug = uniqueSlug('projects', toSlug(name.trim()));
   const { deck_id } = req.body;
@@ -2061,8 +2340,11 @@ app.post('/api/projects', requireAuth, (req, res) => {
 app.put('/api/projects/:id', requireAuth, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) return res.status(403).json({ error: 'Not your project' });
+  if (!canManageProject(project, req.user)) return res.status(403).json({ error: 'Not your project' });
   const { name, description, status, tags, category, repo_url, demo_url, deck_id } = req.body;
+  if (isPlaceholderProject({ name: name !== undefined ? name : project.name, description: description !== undefined ? description : project.description })) {
+    return res.status(400).json({ error: 'Project looks like placeholder content' });
+  }
   db.prepare(`UPDATE projects SET
     name = COALESCE(?, name), description = COALESCE(?, description),
     status = COALESCE(?, status), tags = COALESCE(?, tags),
@@ -2105,7 +2387,7 @@ app.get('/api/projects/:id', (req, res) => {
     LEFT JOIN (SELECT deck_id, COUNT(*) as comment_count FROM comments GROUP BY deck_id) c ON p.id = c.deck_id
     WHERE p.id = ?
   `).get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row || isPlaceholderProject(row)) return res.status(404).json({ error: 'Not found' });
   res.json(row);
 });
 
@@ -2122,13 +2404,14 @@ app.get('/api/projects/:id/comments', (req, res) => {
     WHERE c.deck_id = ?
     ORDER BY c.created_at ASC
   `).all(voterId, req.params.id);
-  res.json(rows);
+  res.json(filterPublicComments(rows));
 });
 
 // POST /api/projects/:id/comments
 app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
   const { content, parent_id } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+  if (hasBlockedCommentContent(content)) return res.status(400).json({ error: 'Comment violates content rules' });
   if (parent_id) {
     const parent = db.prepare('SELECT id, deck_id, parent_id FROM comments WHERE id = ?').get(parent_id);
     if (!parent || parent.deck_id !== req.params.id) return res.status(400).json({ error: 'Invalid parent comment' });
@@ -2152,6 +2435,18 @@ app.post('/api/projects/:id/comments', requireAuth, (req, res) => {
     if (_proj?.user_id) notify(_proj.user_id, 'comment', req.user.id, authorName, 'project', req.params.id, _proj.name);
   }
   res.json({ id });
+});
+
+app.delete('/api/comments/:id', requireAuth, requireAdmin, (req, res) => {
+  const comment = db.prepare('SELECT id FROM comments WHERE id = ?').get(req.params.id);
+  if (!comment) return res.status(404).json({ error: 'Not found' });
+  const commentIds = db.prepare('SELECT id FROM comments WHERE id = ? OR parent_id = ?').all(req.params.id, req.params.id).map((row) => row.id);
+  if (commentIds.length) {
+    const placeholders = commentIds.map(() => '?').join(', ');
+    db.prepare(`DELETE FROM votes WHERE target_type = 'comment' AND target_id IN (${placeholders})`).run(...commentIds);
+  }
+  db.prepare('DELETE FROM comments WHERE id = ? OR parent_id = ?').run(req.params.id, req.params.id);
+  res.json({ ok: true });
 });
 
 // ─── Foyer Activity API ───────────────────────────────────────────────────────
@@ -2193,7 +2488,7 @@ app.get('/api/foyer/activity', (req, res) => {
     ORDER BY ts DESC
     LIMIT 15
   `).all();
-  res.json(rows);
+  res.json(filterPublicIdeas(rows.map((row) => ({ ...row, title: row.idea_title })) ).map(({ title, ...row }) => row));
 });
 
 // GET /api/foyer/top-zappers — top 5 zappers on ideas this week
@@ -2234,20 +2529,22 @@ app.get('/api/ideas', (req, res) => {
     LEFT JOIN (SELECT idea_id, COUNT(*) as team_size FROM idea_members GROUP BY idea_id) t ON i.id = t.idea_id
     ORDER BY ${orderBy}
   `).all();
+  const visibleRows = filterPublicIdeas(rows);
   // Attach first 2 member names per idea
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const names = db.prepare(
       `SELECT u.name FROM idea_members im JOIN users u ON im.user_id = u.id WHERE im.idea_id = ? ORDER BY im.created_at ASC LIMIT 2`
     ).all(row.id);
     row.member_names = names.map(n => n.name).join(', ') || null;
   }
-  res.json(rows);
+  res.json(visibleRows);
 });
 
 // POST /api/ideas — create idea
 app.post('/api/ideas', requireAuth, (req, res) => {
   const { title, description, looking_for } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
+  if (isPlaceholderIdea({ title, description })) return res.status(400).json({ error: 'Idea looks like placeholder content' });
   const id = crypto.randomUUID();
   const slug = uniqueSlug('ideas', toSlug(title.trim()));
   const lookingFor = Array.isArray(looking_for) ? looking_for.join(',') : (looking_for || null);
@@ -2273,7 +2570,7 @@ app.get('/api/ideas/:id', (req, res) => {
     LEFT JOIN (SELECT idea_id, COUNT(*) as team_size FROM idea_members GROUP BY idea_id) t ON i.id = t.idea_id
     WHERE i.id = ?
   `).get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row || isPlaceholderIdea(row)) return res.status(404).json({ error: 'Not found' });
   // Track views
   const today = new Date().toISOString().slice(0, 10);
   if (row.views_date === today) {
@@ -2305,6 +2602,7 @@ app.put('/api/ideas/:id', requireAuth, (req, res) => {
   if (title !== undefined && (!title || !title.trim())) return res.status(400).json({ error: 'title required' });
   const newTitle = title !== undefined ? title.trim() : idea.title;
   const newDesc = description !== undefined ? (description || null) : idea.description;
+  if (isPlaceholderIdea({ title: newTitle, description: newDesc })) return res.status(400).json({ error: 'Idea looks like placeholder content' });
   const newLooking = looking_for !== undefined ? (Array.isArray(looking_for) ? looking_for.join(',') : (looking_for || null)) : idea.looking_for;
   const newSlug = title !== undefined ? uniqueSlug('ideas', toSlug(newTitle)) : idea.slug;
   db.prepare('UPDATE ideas SET title = ?, description = ?, looking_for = ?, slug = ? WHERE id = ?').run(
@@ -2394,13 +2692,14 @@ app.get('/api/ideas/:id/comments', (req, res) => {
     WHERE c.deck_id = ?
     ORDER BY c.created_at ASC
   `).all(voterId, req.params.id);
-  res.json(rows);
+  res.json(filterPublicComments(rows));
 });
 
 // POST /api/ideas/:id/comments
 app.post('/api/ideas/:id/comments', requireAuth, (req, res) => {
   const { content, parent_id } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+  if (hasBlockedCommentContent(content)) return res.status(400).json({ error: 'Comment violates content rules' });
   if (parent_id) {
     const parent = db.prepare('SELECT id, deck_id, parent_id FROM comments WHERE id = ?').get(parent_id);
     if (!parent || parent.deck_id !== req.params.id) return res.status(400).json({ error: 'Invalid parent comment' });
@@ -2479,7 +2778,7 @@ app.get('/api/projects/:id/decks', (req, res) => {
 app.post('/api/projects/:id/decks', requireAuth, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
@@ -2511,7 +2810,7 @@ app.post('/api/projects/:id/decks/upload', requireAuth, upload.single('file'), a
     if (req.file) fs.unlinkSync(req.file.path);
     return res.status(404).json({ error: 'Not found' });
   }
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     if (req.file) fs.unlinkSync(req.file.path);
     return res.status(403).json({ error: 'Not authorized' });
   }
@@ -2572,7 +2871,7 @@ app.post('/api/projects/:id/decks/upload', requireAuth, upload.single('file'), a
 app.delete('/api/projects/:id/decks/:version_id', requireAuth, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
@@ -2599,7 +2898,7 @@ app.delete('/api/projects/:id/decks/:version_id', requireAuth, (req, res) => {
 app.patch('/api/projects/:id/decks/:version_id/set-current', requireAuth, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.user_id && req.user?.id !== project.user_id && !req.user?.is_admin) {
+  if (!canManageProject(project, req.user)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
@@ -2617,6 +2916,7 @@ app.patch('/api/projects/:id/decks/:version_id/set-current', requireAuth, (req, 
 
 app.get('/api/leaderboard', (req, res) => {
   const sort = req.query.sort || 'earners';
+  const leaderboardQueryLimit = 40;
   let rows;
   if (sort === 'zappers') {
     rows = db.prepare(`
@@ -2627,7 +2927,7 @@ app.get('/api/leaderboard', (req, res) => {
         (SELECT COALESCE(SUM(z.amount_sats),0) FROM zaps z WHERE z.user_id=u.id AND z.status='confirmed') +
         (SELECT COALESCE(SUM(bp.amount_sats),0) FROM bounty_payments bp WHERE bp.user_id=u.id AND bp.payment_type='fund' AND bp.status='confirmed') as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else if (sort === 'projects') {
     rows = db.prepare(`
@@ -2637,7 +2937,7 @@ app.get('/api/leaderboard', (req, res) => {
         COALESCE(u.total_sats_received, 0) as zaps_received,
         (SELECT COUNT(*) FROM projects p WHERE p.user_id=u.id) as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else if (sort === 'active') {
     rows = db.prepare(`
@@ -2650,7 +2950,7 @@ app.get('/api/leaderboard', (req, res) => {
         (SELECT COUNT(*) FROM zaps z WHERE z.user_id=u.id AND z.status='confirmed') +
         (SELECT COUNT(*) FROM bounty_payments bpay WHERE bpay.user_id=u.id AND bpay.status='confirmed') as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   } else {
     rows = db.prepare(`
@@ -2660,24 +2960,26 @@ app.get('/api/leaderboard', (req, res) => {
         COALESCE(u.total_sats_received, 0) as zaps_received,
         (COALESCE(SUM(CASE WHEN b.paid_out = 1 THEN b.sats_amount ELSE 0 END), 0) + COALESCE(u.total_sats_received, 0)) as sort_val
       FROM users u LEFT JOIN bounties b ON b.winner_id = u.id
-      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC, bounties_won DESC LIMIT 20
+      WHERE u.name IS NOT NULL GROUP BY u.id ORDER BY sort_val DESC, bounties_won DESC LIMIT ${leaderboardQueryLimit}
     `).all();
   }
 
-  const result = rows.map((u, i) => {
-    const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
-    const zaps_sent = db.prepare('SELECT COALESCE(SUM(amount_sats),0) as s FROM zaps WHERE user_id = ? AND status = ?').get(u.user_id, 'confirmed')?.s || 0;
-    let badges = [];
-    try { badges = JSON.parse(u.badges || '[]'); } catch {}
-    const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
-    return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), zaps_sent, bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
-  });
+  const result = filterPublicLeaderboardRows(rows)
+    .slice(0, 20)
+    .map((u, i) => {
+      const projects_count = db.prepare('SELECT COUNT(*) as c FROM projects WHERE user_id = ?').get(u.user_id)?.c || 0;
+      const zaps_sent = db.prepare('SELECT COALESCE(SUM(amount_sats),0) as s FROM zaps WHERE user_id = ? AND status = ?').get(u.user_id, 'confirmed')?.s || 0;
+      let badges = [];
+      try { badges = JSON.parse(u.badges || '[]'); } catch {}
+      const total_sats = Number(u.bounty_sats) + Number(u.zaps_received);
+      return { rank: i + 1, user_id: u.user_id, name: u.name, avatar: u.avatar, total_sats, bounty_sats: Number(u.bounty_sats), zaps_received: Number(u.zaps_received), zaps_sent, bounties_won: u.bounties_won, projects_count, badges, sort_val: Number(u.sort_val || 0) };
+    });
   res.json(result);
 });
 
 app.get('/api/users/:id', (req, res) => {
   cachedBadgeCheck(req.params.id);
-  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at, lightning_address, badges, bio, website_url, github_url FROM users WHERE id = ?').get(req.params.id);
+  const user = db.prepare('SELECT id, name, email, avatar, is_admin, created_at, lightning_address, badges, bio, website_url, github_url, banner_preset FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const deckCount = db.prepare('SELECT COUNT(*) as c FROM decks WHERE uploaded_by = ?').get(req.params.id).c;
   const projectCount = db.prepare("SELECT COUNT(*) as c FROM projects WHERE user_id = ? OR builder = ?").get(req.params.id, user.name).c;
@@ -2688,9 +2990,10 @@ app.get('/api/users/:id', (req, res) => {
   const zapsSent = db.prepare("SELECT COALESCE(SUM(amount_sats), 0) as s FROM zaps WHERE user_id = ? AND status = 'confirmed'").get(req.params.id)?.s || 0;
   const bountyFunded = db.prepare("SELECT COALESCE(SUM(amount_sats), 0) as s FROM bounty_payments WHERE user_id = ? AND payment_type = 'fund' AND status = 'confirmed'").get(req.params.id)?.s || 0;
   const totalZapsSent = Number(zapsSent) + Number(bountyFunded);
+  const upcomingPresenter = getUpcomingPresenterState(req.params.id);
   let badges = [];
   try { badges = JSON.parse(user.badges || '[]'); } catch {}
-  res.json({ ...user, badges, deck_count: deckCount, project_count: projectCount, total_sats_earned: totalSats, bounty_sats: Number(bountySats), zaps_received: Number(zapsReceived), bounties_won: bountiesWon, total_zaps_sent: totalZapsSent });
+  res.json({ ...user, badges, upcoming_presenter: upcomingPresenter, deck_count: deckCount, project_count: projectCount, total_sats_earned: totalSats, bounty_sats: Number(bountySats), zaps_received: Number(zapsReceived), bounties_won: bountiesWon, total_zaps_sent: totalZapsSent });
 });
 
 app.get('/api/users/:id/decks', (req, res) => {
@@ -2811,6 +3114,25 @@ app.post('/api/vote', requireAuth, (req, res) => {
   if (!['deck', 'speaker', 'project', 'comment', 'idea'].includes(type) || !id) {
     return res.status(400).json({ error: 'type (deck|speaker|project|comment) and id required' });
   }
+  if (type === 'speaker') {
+    const speakerVotingState = db.prepare(`
+      SELECT ls.voting_open, ls.is_active, ls.current_speaker_id, ls.status, COALESCE(s.status, 'scheduled') AS speaker_status
+      FROM speakers s
+      LEFT JOIN live_sessions ls ON ls.event_id = s.event_id
+      WHERE s.id = ?
+    `).get(id);
+    if (speakerVotingState?.is_active) {
+      const currentSpeakerVoting = Number(speakerVotingState.voting_open || 0) && speakerVotingState.current_speaker_id === id;
+      const finalVotingSession = speakerVotingState.status === 'voting' && !speakerVotingState.current_speaker_id;
+      const finalVotingOpen = Number(speakerVotingState.voting_open || 0)
+        && finalVotingSession
+        && speakerVotingState.speaker_status !== 'skipped';
+      const votingAllowed = finalVotingOpen;
+      if (!votingAllowed) {
+        return res.status(409).json({ error: 'Voting is closed for this speaker right now' });
+      }
+    }
+  }
   const voter = req.user ? req.user.id : (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
   const existing = stmts.hasVoted.get(type, id, voter);
   if (existing) {
@@ -2879,9 +3201,12 @@ app.get('/api/vote/check', (req, res) => {
 
 // GET /api/notifications — recent notifications + unread count
 app.get('/api/notifications', requireAuth, (req, res) => {
-  const notifications = stmts.getRecentNotifs.all(req.user.id);
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 30, 1), 100);
+  const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+  const notifications = stmts.getNotificationsPage.all(req.user.id, limit, offset);
   const unread_count = stmts.getUnreadCount.get(req.user.id).c;
-  res.json({ notifications, unread_count });
+  const total_count = stmts.getNotificationsCount.get(req.user.id).c;
+  res.json({ notifications, unread_count, total_count, limit, offset, has_more: offset + notifications.length < total_count });
 });
 
 // POST /api/notifications/read — mark one notification as read
@@ -2955,50 +3280,603 @@ app.get('/api/events/:id/bounties', (req, res) => {
 
 // ─── Live Presenter Mode API ──────────────────────────────────────────────────
 
-// GET /api/live/:eventId — get current live state (public, no auth for polling)
-app.get('/api/live/:eventId', (req, res) => {
-  const session = db.prepare('SELECT * FROM live_sessions WHERE event_id = ?').get(req.params.eventId);
-  if (!session || !session.is_active) return res.json({ active: false, speaker: null, speakers: [], event: null });
-
-  const event = db.prepare('SELECT id, name, description FROM events WHERE id = ?').get(req.params.eventId);
-  const speakers = db.prepare(`
+function getOrderedEventSpeakers(eventId) {
+  return db.prepare(`
     SELECT s.*, COALESCE(v.vote_count, 0) as votes,
+      COALESCE(z.total_sats, 0) as zap_total,
       d.entry_point, d.id as deck_id_real
     FROM speakers s
     LEFT JOIN (SELECT target_id, COUNT(*) as vote_count FROM votes WHERE target_type = 'speaker' GROUP BY target_id) v ON s.id = v.target_id
+    LEFT JOIN (
+      SELECT target_id, SUM(amount_sats) as total_sats
+      FROM zaps
+      WHERE target_type = 'speaker' AND status = 'confirmed'
+      GROUP BY target_id
+    ) z ON s.id = z.target_id
     LEFT JOIN decks d ON s.deck_id = d.id
     WHERE s.event_id = ?
-    ORDER BY s.created_at ASC
-  `).all(req.params.eventId);
-  const current = session.current_speaker_id
-    ? speakers.find(s => s.id === session.current_speaker_id) || null
+    ORDER BY COALESCE(s.queue_position, 2147483647) ASC, s.created_at ASC
+  `).all(eventId).map((speaker) => ({
+    ...speaker,
+    status: speaker.status || 'scheduled',
+  }));
+}
+
+function getNextQueueSpeaker(eventId, currentSpeakerId = null) {
+  const speakers = getOrderedEventSpeakers(eventId);
+  const currentIndex = currentSpeakerId ? speakers.findIndex((speaker) => speaker.id === currentSpeakerId) : -1;
+  const afterCurrent = currentIndex >= 0 ? speakers.slice(currentIndex + 1) : speakers;
+  const fallback = currentIndex >= 0 ? speakers.slice(0, currentIndex) : [];
+  const candidates = [...afterCurrent, ...fallback];
+  return candidates.find((speaker) => !['presented', 'skipped', 'winner', 'live'].includes(speaker.status)) || null;
+}
+
+function getRecommendedWinner(eventId, providedSpeakers = null) {
+  const speakers = providedSpeakers || getOrderedEventSpeakers(eventId);
+  return speakers
+    .filter((speaker) => speaker.status !== 'skipped')
+    .slice()
+    .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0)
+      || Number(b.zap_total || 0) - Number(a.zap_total || 0)
+      || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647)
+      || String(a.created_at || '').localeCompare(String(b.created_at || '')))[0] || null;
+}
+
+function getStoredEventResults(eventId) {
+  const row = db.prepare('SELECT * FROM event_results WHERE event_id = ?').get(eventId);
+  if (!row) return null;
+  let parsed = null;
+  if (row.results_json) {
+    try {
+      parsed = JSON.parse(row.results_json);
+    } catch {
+      parsed = null;
+    }
+  }
+  return {
+    ...row,
+    results: parsed,
+  };
+}
+
+function buildEventResultsRecord(eventId) {
+  const event = db.prepare('SELECT id, name, description, event_type as type, date, time, location, virtual_link FROM events WHERE id = ?').get(eventId);
+  if (!event) return null;
+
+  const session = db.prepare(`
+    SELECT *,
+      COALESCE(status, CASE WHEN COALESCE(is_active, 0) = 1 THEN 'live' ELSE 'idle' END) as normalized_status,
+      COALESCE(voting_open, 0) as normalized_voting_open,
+      COALESCE(payout_status, 'pending') as normalized_payout_status,
+      COALESCE(current_duration_minutes, 10) as normalized_current_duration_minutes,
+      COALESCE(meet_url, ?) as normalized_meet_url
+    FROM live_sessions
+    WHERE event_id = ?
+  `).get(event.virtual_link || null, eventId);
+  const speakers = getOrderedEventSpeakers(eventId);
+  if (!speakers.length) return null;
+
+  const rankings = speakers
+    .slice()
+    .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0)
+      || Number(b.zap_total || 0) - Number(a.zap_total || 0)
+      || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647)
+      || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+    .map((speaker, index) => ({
+      rank: index + 1,
+      id: speaker.id,
+      name: speaker.name,
+      user_id: speaker.user_id || null,
+      project_title: speaker.project_title || speaker.project || 'Untitled',
+      description: speaker.description || null,
+      status: speaker.status || 'scheduled',
+      duration: speaker.duration || null,
+      votes: Number(speaker.votes || 0),
+      zap_total: Number(speaker.zap_total || 0),
+      deck_id: speaker.deck_id || speaker.deck_id_real || null,
+      github_url: speaker.github_url || null,
+      demo_url: speaker.demo_url || null,
+      queue_position: Number(speaker.queue_position || 0) || null,
+      presented_at: speaker.presented_at || null,
+      skipped_at: speaker.skipped_at || null,
+    }));
+
+  const winner = rankings.find((speaker) => speaker.id === session?.winner_speaker_id)
+    || rankings.find((speaker) => speaker.status === 'winner')
+    || (['winner_pending', 'completed'].includes(session?.normalized_status) ? getRecommendedWinner(eventId, speakers) : null);
+
+  const recentSupport = db.prepare(`
+    SELECT z.id, z.target_id, z.user_name, z.amount_sats, z.created_at, z.confirmed_at, s.name as speaker_name, s.project_title
+    FROM zaps z
+    JOIN speakers s ON s.id = z.target_id
+    WHERE z.target_type = 'speaker' AND z.status = 'confirmed' AND s.event_id = ?
+    ORDER BY z.confirmed_at DESC, z.created_at DESC
+    LIMIT 6
+  `).all(eventId).map((row) => ({
+    id: row.id,
+    target_id: row.target_id,
+    user_name: row.user_name,
+    amount_sats: Number(row.amount_sats || 0),
+    created_at: row.confirmed_at || row.created_at,
+    speaker_name: row.speaker_name,
+    project_title: row.project_title,
+  }));
+
+  const totalVotes = rankings.reduce((sum, speaker) => sum + Number(speaker.votes || 0), 0);
+  const totalZaps = rankings.reduce((sum, speaker) => sum + Number(speaker.zap_total || 0), 0);
+  const completedCount = rankings.filter((speaker) => speaker.status === 'presented' || speaker.status === 'winner').length;
+  const skippedCount = rankings.filter((speaker) => speaker.status === 'skipped').length;
+  const payoutStatus = session?.normalized_payout_status || 'pending';
+  const summaryMarkdown = [
+    `# ${event.name} results`,
+    winner ? `Winner: ${winner.name} — ${winner.project_title}` : 'Winner: pending',
+    `Presenters: ${rankings.length}`,
+    `Completed presentations: ${completedCount}`,
+    `Skipped presenters: ${skippedCount}`,
+    `Total votes: ${totalVotes}`,
+    `Total zaps: ${totalZaps} sats`,
+    `Payout status: ${payoutStatus}`,
+    '',
+    '## Rankings',
+    ...rankings.map((speaker) => `${speaker.rank}. ${speaker.name} — ${speaker.project_title} (${speaker.votes} votes, ${speaker.zap_total} sats)`),
+  ].join('\n');
+
+  const winnerPayload = winner ? {
+    id: winner.id,
+    name: winner.name,
+    user_id: winner.user_id || null,
+    project_title: winner.project_title || winner.project || 'Untitled',
+    votes: Number(winner.votes || 0),
+    zap_total: Number(winner.zap_total || 0),
+    deck_id: winner.deck_id || winner.deck_id_real || null,
+    github_url: winner.github_url || null,
+    demo_url: winner.demo_url || null,
+  } : null;
+
+  const results = {
+    generated_at: new Date().toISOString(),
+    event: {
+      id: event.id,
+      name: event.name,
+      description: event.description || null,
+      type: event.type,
+      date: event.date || null,
+      time: event.time || null,
+      location: event.location || null,
+    },
+    session: session ? {
+      id: session.id,
+      status: session.normalized_status,
+      voting_open: Number(session.normalized_voting_open || 0),
+      payout_status: payoutStatus,
+      winner_confirmed_at: session.winner_confirmed_at || null,
+      ended_at: session.ended_at || null,
+      meet_url: session.normalized_meet_url || null,
+      current_duration_minutes: Number(session.normalized_current_duration_minutes || 10),
+    } : null,
+    winner: winnerPayload,
+    scoreboard: {
+      total_votes: totalVotes,
+      total_zaps: totalZaps,
+      presenter_count: rankings.length,
+      completed_count: completedCount,
+      skipped_count: skippedCount,
+    },
+    rankings,
+    recent_support: recentSupport,
+    summary_markdown: summaryMarkdown,
+  };
+
+  const existing = db.prepare('SELECT id FROM event_results WHERE event_id = ?').get(eventId);
+  return {
+    id: existing?.id || crypto.randomUUID(),
+    event_id: eventId,
+    winner_speaker_id: winnerPayload?.id || null,
+    winner_name: winnerPayload?.name || null,
+    winner_project_title: winnerPayload?.project_title || null,
+    total_votes: totalVotes,
+    total_zaps: totalZaps,
+    results_json: JSON.stringify(results),
+    summary_markdown: summaryMarkdown,
+  };
+}
+
+function upsertEventResults(eventId) {
+  const record = buildEventResultsRecord(eventId);
+  if (!record) return null;
+  db.prepare(`
+    INSERT INTO event_results (
+      id, event_id, winner_speaker_id, winner_name, winner_project_title,
+      total_votes, total_zaps, results_json, summary_markdown
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(event_id) DO UPDATE SET
+      winner_speaker_id = excluded.winner_speaker_id,
+      winner_name = excluded.winner_name,
+      winner_project_title = excluded.winner_project_title,
+      total_votes = excluded.total_votes,
+      total_zaps = excluded.total_zaps,
+      results_json = excluded.results_json,
+      summary_markdown = excluded.summary_markdown,
+      created_at = CURRENT_TIMESTAMP
+  `).run(
+    record.id,
+    record.event_id,
+    record.winner_speaker_id,
+    record.winner_name,
+    record.winner_project_title,
+    record.total_votes,
+    record.total_zaps,
+    record.results_json,
+    record.summary_markdown,
+  );
+  return getStoredEventResults(eventId);
+}
+
+function resetSpeakerStatusesForSession(eventId, liveSpeakerId = null) {
+  const speakers = getOrderedEventSpeakers(eventId);
+  for (const speaker of speakers) {
+    if (['presented', 'skipped', 'winner'].includes(speaker.status)) continue;
+    const nextStatus = speaker.id === liveSpeakerId ? 'live' : 'scheduled';
+    db.prepare('UPDATE speakers SET status = ? WHERE id = ?').run(nextStatus, speaker.id);
+  }
+}
+
+function getActiveLiveSessionOrNull(eventId) {
+  return db.prepare('SELECT * FROM live_sessions WHERE event_id = ? AND is_active = 1').get(eventId) || null;
+}
+
+function getLiveSessionPayload(eventId, viewer = null) {
+  const event = db.prepare('SELECT id, name, description, event_type as type, virtual_link FROM events WHERE id = ?').get(eventId);
+  if (!event) return null;
+
+  const sessionRow = db.prepare(`
+    SELECT *,
+      COALESCE(mode, 'demo-day-live') as mode,
+      COALESCE(status, CASE WHEN COALESCE(is_active, 0) = 1 THEN 'live' ELSE 'idle' END) as normalized_status,
+      COALESCE(voting_open, 0) as normalized_voting_open,
+      COALESCE(current_duration_minutes, 10) as normalized_current_duration_minutes,
+      COALESCE(payout_status, 'pending') as normalized_payout_status,
+      COALESCE(meet_url, ?) as normalized_meet_url
+    FROM live_sessions
+    WHERE event_id = ?
+  `).get(event.virtual_link || null, eventId);
+
+  const speakers = getOrderedEventSpeakers(eventId);
+  const session = sessionRow ? {
+    ...sessionRow,
+    mode: sessionRow.mode || 'demo-day-live',
+    status: sessionRow.normalized_status,
+    voting_open: Number(sessionRow.normalized_voting_open || 0),
+    current_duration_minutes: Number(sessionRow.normalized_current_duration_minutes || 10),
+    payout_status: sessionRow.normalized_payout_status || 'pending',
+    meet_url: sessionRow.normalized_meet_url || null,
+  } : null;
+
+  const current = session?.current_speaker_id
+    ? speakers.find((speaker) => speaker.id === session.current_speaker_id) || null
     : null;
-  res.json({ active: true, session, speaker: current, speakers, event });
+  const next_speaker = getNextQueueSpeaker(eventId, session?.current_speaker_id || null);
+
+  const nowMs = Date.now();
+  let time_remaining_seconds = null;
+  let stage_status_label = 'Offline';
+  let time_remaining_label = 'Awaiting next presenter';
+  if (session?.is_active) {
+    if (session?.status === 'voting' && !session?.current_speaker_id) {
+      stage_status_label = 'Voting is now open';
+      time_remaining_label = 'Cast your votes before winner selection';
+    } else if (session?.status === 'presentations_complete') {
+      stage_status_label = 'All Presentations Complete';
+      time_remaining_label = 'Host can open final voting when ready';
+    } else if (session?.status === 'winner_pending') {
+      stage_status_label = 'Winner Pending';
+      time_remaining_label = 'Winner Pending';
+    } else if (!current) {
+      stage_status_label = 'Waiting for next presenter';
+      time_remaining_label = 'Awaiting next presenter';
+    } else if (session?.status === 'voting') {
+      stage_status_label = 'Voting Open';
+      time_remaining_label = 'Audience voting is live';
+    } else {
+      stage_status_label = 'Live Now';
+      time_remaining_label = 'Awaiting next presenter';
+    }
+  }
+  if (current && session?.current_started_at) {
+    const startMs = Date.parse(session.current_started_at + 'Z');
+    const durationSeconds = Number(session.current_duration_minutes || 10) * 60;
+    if (Number.isFinite(startMs)) {
+      const elapsed = Math.floor((nowMs - startMs) / 1000);
+      time_remaining_seconds = Math.max(0, durationSeconds - elapsed);
+      if (elapsed < 0) {
+        time_remaining_label = `Starts in ${Math.abs(elapsed)}s`;
+      } else if (time_remaining_seconds > 0) {
+        time_remaining_label = `${time_remaining_seconds}s remaining`;
+      } else {
+        time_remaining_label = 'Time is up';
+      }
+    }
+  }
+
+  const lineup_groups = {
+    current: current ? [current] : [],
+    upcoming: speakers.filter((speaker) => !['presented', 'skipped', 'winner'].includes(speaker.status) && speaker.id !== current?.id),
+    completed: speakers.filter((speaker) => ['presented', 'skipped', 'winner'].includes(speaker.status)),
+  };
+
+  const vote_leader = speakers
+    .slice()
+    .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0) || Number(b.zap_total || 0) - Number(a.zap_total || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))[0] || null;
+  const zap_leader = speakers
+    .slice()
+    .sort((a, b) => Number(b.zap_total || 0) - Number(a.zap_total || 0) || Number(b.votes || 0) - Number(a.votes || 0) || Number(a.queue_position || 2147483647) - Number(b.queue_position || 2147483647))[0] || null;
+  const recent_support = db.prepare(`
+    SELECT z.id, z.target_id, z.user_name, z.amount_sats, z.created_at, s.name as speaker_name, s.project_title
+    FROM zaps z
+    JOIN speakers s ON s.id = z.target_id
+    WHERE z.target_type = 'speaker' AND z.status = 'confirmed' AND s.event_id = ?
+    ORDER BY z.confirmed_at DESC, z.created_at DESC
+    LIMIT 4
+  `).all(eventId);
+  const scoreboard = {
+    total_votes: speakers.reduce((sum, speaker) => sum + Number(speaker.votes || 0), 0),
+    total_zaps: speakers.reduce((sum, speaker) => sum + Number(speaker.zap_total || 0), 0),
+    leader: vote_leader,
+    vote_leader,
+    zap_leader,
+    recent_support,
+  };
+  const winner_recommendation = getRecommendedWinner(eventId, speakers);
+  const winner = session?.winner_speaker_id
+    ? speakers.find((speaker) => speaker.id === session.winner_speaker_id) || null
+    : null;
+  const payout_status_label = {
+    pending: 'Payout pending',
+    confirmed: 'Payout confirmed',
+    sent: 'Payout sent',
+  }[session?.payout_status || 'pending'] || 'Payout pending';
+  const viewer_role = viewer?.is_admin
+    ? 'host'
+    : (current?.user_id && viewer?.id && current.user_id === viewer.id ? 'presenter' : 'audience');
+  const can_control_slides = !!(current?.user_id && viewer?.id && current.user_id === viewer.id);
+
+  const results = getStoredEventResults(eventId);
+
+  return {
+    active: !!session?.is_active,
+    event,
+    session,
+    speaker: current,
+    next_speaker,
+    speakers,
+    lineup_groups,
+    scoreboard,
+    winner,
+    winner_recommendation,
+    payout_status_label,
+    viewer_role,
+    can_control_slides,
+    stage_status_label,
+    time_remaining_seconds,
+    time_remaining_label,
+    meet_url: session?.meet_url || event.virtual_link || null,
+    results_url: results ? `/event/${eventId}#results` : null,
+    results_summary: results ? {
+      id: results.id,
+      created_at: results.created_at,
+      winner_name: results.winner_name,
+      winner_project_title: results.winner_project_title,
+      total_votes: Number(results.total_votes || 0),
+      total_zaps: Number(results.total_zaps || 0),
+    } : null,
+  };
+}
+
+// GET /api/live/:eventId — get current live state (public, no auth for polling)
+app.get('/api/live/:eventId', (req, res) => {
+  const payload = getLiveSessionPayload(req.params.eventId, req.user || null);
+  if (!payload) return res.status(404).json({ error: 'Event not found' });
+  if (!payload.active) return res.json({ ...payload, active: false, speaker: null });
+  res.json(payload);
 });
 
 // POST /api/live/:eventId/start — admin starts live session
 app.post('/api/live/:eventId/start', requireAuth, requireAdmin, (req, res) => {
-  const event = db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.eventId);
+  const event = db.prepare('SELECT id, virtual_link FROM events WHERE id = ?').get(req.params.eventId);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const existing = db.prepare('SELECT id FROM live_sessions WHERE event_id = ?').get(req.params.eventId);
   if (existing) {
-    db.prepare("UPDATE live_sessions SET is_active = 1, updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+    db.prepare("UPDATE live_sessions SET is_active = 1, current_speaker_id = NULL, current_started_at = NULL, winner_speaker_id = NULL, winner_confirmed_at = NULL, status = 'live', voting_open = 0, payout_status = 'pending', ended_at = NULL, meet_url = COALESCE(meet_url, ?), updated_at = datetime('now') WHERE event_id = ?").run(event.virtual_link || null, req.params.eventId);
   } else {
-    db.prepare("INSERT INTO live_sessions (id, event_id, is_active) VALUES (?, ?, 1)").run(crypto.randomUUID(), req.params.eventId);
+    db.prepare("INSERT INTO live_sessions (id, event_id, is_active, mode, status, voting_open, payout_status, meet_url) VALUES (?, ?, 1, 'demo-day-live', 'live', 0, 'pending', ?)").run(crypto.randomUUID(), req.params.eventId, event.virtual_link || null);
   }
-  res.json({ ok: true });
+  resetSpeakerStatusesForSession(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
 });
 
 // POST /api/live/:eventId/stop — admin ends live session
 app.post('/api/live/:eventId/stop', requireAuth, requireAdmin, (req, res) => {
-  db.prepare("UPDATE live_sessions SET is_active = 0, current_speaker_id = NULL, updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
-  res.json({ ok: true });
+  resetSpeakerStatusesForSession(req.params.eventId);
+  db.prepare("UPDATE live_sessions SET is_active = 0, current_speaker_id = NULL, voting_open = 0, status = 'completed', ended_at = datetime('now'), updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  upsertEventResults(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
 });
 
 // POST /api/live/:eventId/speaker — admin sets current speaker
 app.post('/api/live/:eventId/speaker', requireAuth, requireAdmin, (req, res) => {
   const { speaker_id } = req.body;
-  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, updated_at = datetime('now') WHERE event_id = ?").run(speaker_id || null, req.params.eventId);
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (speaker_id) {
+    const speaker = db.prepare('SELECT id, status FROM speakers WHERE id = ? AND event_id = ?').get(speaker_id, req.params.eventId);
+    if (!speaker) return res.status(404).json({ error: 'Speaker not found in this event' });
+    resetSpeakerStatusesForSession(req.params.eventId, speaker_id);
+    db.prepare("UPDATE speakers SET status = 'live' WHERE id = ?").run(speaker_id);
+  }
+  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), status = 'live', voting_open = 0, updated_at = datetime('now') WHERE event_id = ?").run(speaker_id || null, req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/open-voting', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (activeSession.current_speaker_id || activeSession.status !== 'presentations_complete') {
+    return res.status(409).json({ error: 'Final voting can only open after all presentations are complete' });
+  }
+  db.prepare("UPDATE live_sessions SET voting_open = 1, status = 'voting', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/close-voting', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!Number(activeSession.voting_open || 0)) return res.status(409).json({ error: 'Final voting is not open' });
+  db.prepare("UPDATE live_sessions SET voting_open = 0, status = 'presentations_complete', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/confirm-winner', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (activeSession.current_speaker_id) return res.status(409).json({ error: 'Finish the current presentation before confirming a winner' });
+  if (!['voting', 'presentations_complete', 'winner_pending'].includes(activeSession.status)) {
+    return res.status(409).json({ error: 'Winner confirmation is only available after presentations finish' });
+  }
+
+  const payload = getLiveSessionPayload(req.params.eventId);
+  const winnerCandidateId = req.body?.speaker_id || payload?.winner_recommendation?.id;
+  if (!winnerCandidateId) return res.status(404).json({ error: 'No eligible winner candidate found' });
+  const winnerCandidate = (payload?.speakers || []).find((speaker) => speaker.id === winnerCandidateId && speaker.status !== 'skipped');
+  if (!winnerCandidate) return res.status(404).json({ error: 'Winner candidate not found' });
+
+  db.prepare(`
+    UPDATE speakers
+    SET status = CASE
+      WHEN presented_at IS NOT NULL THEN 'presented'
+      WHEN skipped_at IS NOT NULL THEN 'skipped'
+      ELSE 'scheduled'
+    END
+    WHERE event_id = ? AND status = 'winner' AND id != ?
+  `).run(req.params.eventId, winnerCandidate.id);
+  db.prepare("UPDATE speakers SET status = 'winner', presented_at = COALESCE(presented_at, datetime('now')) WHERE id = ?").run(winnerCandidate.id);
+  db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, winner_speaker_id = ?, winner_confirmed_at = datetime('now'), payout_status = CASE WHEN payout_status = 'sent' THEN 'sent' ELSE 'pending' END, status = 'winner_pending', updated_at = datetime('now') WHERE event_id = ?")
+    .run(winnerCandidate.id, req.params.eventId);
+
+  upsertEventResults(req.params.eventId);
+  const nextPayload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload: nextPayload });
+});
+
+app.post('/api/live/:eventId/confirm-payout', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.winner_speaker_id) return res.status(409).json({ error: 'Confirm a winner before confirming payout' });
+  db.prepare("UPDATE live_sessions SET payout_status = 'confirmed', status = 'winner_pending', updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  upsertEventResults(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/mark-payout-sent', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.winner_speaker_id) return res.status(409).json({ error: 'Confirm a winner before marking payout sent' });
+  db.prepare("UPDATE live_sessions SET payout_status = 'sent', status = 'completed', is_active = 0, ended_at = COALESCE(ended_at, datetime('now')), updated_at = datetime('now') WHERE event_id = ?").run(req.params.eventId);
+  upsertEventResults(req.params.eventId);
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/advance', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  const payload = getLiveSessionPayload(req.params.eventId);
+  if (!payload?.session) return res.status(404).json({ error: 'Live session not found' });
+
+  if (payload.session.current_speaker_id) {
+    const currentSpeaker = db.prepare('SELECT id, user_id FROM speakers WHERE id = ? AND event_id = ?').get(payload.session.current_speaker_id, req.params.eventId);
+    if (currentSpeaker) {
+      db.prepare("UPDATE speakers SET presented_at = COALESCE(presented_at, datetime('now')), status = 'presented' WHERE id = ?").run(currentSpeaker.id);
+      if (currentSpeaker.user_id) checkAndAwardBadges(currentSpeaker.user_id);
+    }
+  }
+
+  const nextSpeaker = getNextQueueSpeaker(req.params.eventId, payload.session.current_speaker_id || null);
+  resetSpeakerStatusesForSession(req.params.eventId, nextSpeaker?.id || null);
+  if (nextSpeaker) {
+    db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = datetime('now'), voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?")
+      .run(nextSpeaker.id, req.params.eventId);
+  } else {
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = 'presentations_complete', updated_at = datetime('now') WHERE event_id = ?")
+      .run(req.params.eventId);
+  }
+
+  const nextPayload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload: nextPayload });
+});
+
+app.post('/api/live/:eventId/mark-presented', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  if (!activeSession.current_speaker_id) return res.status(409).json({ error: 'No current speaker to mark presented' });
+
+  const currentSpeaker = db.prepare('SELECT id, user_id FROM speakers WHERE id = ? AND event_id = ?').get(activeSession.current_speaker_id, req.params.eventId);
+  if (!currentSpeaker) return res.status(404).json({ error: 'Speaker not found' });
+
+  db.prepare("UPDATE speakers SET presented_at = COALESCE(presented_at, datetime('now')), status = 'presented' WHERE id = ?").run(currentSpeaker.id);
+  if (currentSpeaker.user_id) checkAndAwardBadges(currentSpeaker.user_id);
+  resetSpeakerStatusesForSession(req.params.eventId);
+  const remainingSpeaker = getNextQueueSpeaker(req.params.eventId, currentSpeaker.id);
+  const nextStatus = remainingSpeaker ? 'live' : 'presentations_complete';
+  db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = ?, updated_at = datetime('now') WHERE event_id = ?").run(nextStatus, req.params.eventId);
+
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/live/:eventId/unmark-presented', requireAuth, requireAdmin, (req, res) => {
+  const activeSession = getActiveLiveSessionOrNull(req.params.eventId);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  const speaker = db.prepare(`
+    SELECT * FROM speakers
+    WHERE event_id = ? AND presented_at IS NOT NULL
+    ORDER BY presented_at DESC, queue_position DESC, created_at DESC
+    LIMIT 1
+  `).get(req.params.eventId);
+  if (!speaker) return res.status(404).json({ error: 'No presented speaker to undo' });
+
+  db.prepare("UPDATE speakers SET presented_at = NULL, status = 'scheduled' WHERE id = ?").run(speaker.id);
+  resetSpeakerStatusesForSession(req.params.eventId, speaker.id);
+  db.prepare("UPDATE live_sessions SET current_speaker_id = ?, current_started_at = NULL, voting_open = 0, status = 'live', updated_at = datetime('now') WHERE event_id = ?").run(speaker.id, req.params.eventId);
+
+  const payload = getLiveSessionPayload(req.params.eventId);
+  res.json({ ok: true, payload });
+});
+
+app.post('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT id, event_id FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  const activeSession = getActiveLiveSessionOrNull(speaker.event_id);
+  if (!activeSession) return res.status(409).json({ error: 'Live session is not active' });
+  db.prepare("UPDATE speakers SET status = 'skipped', skipped_at = COALESCE(skipped_at, datetime('now')) WHERE id = ?").run(req.params.id);
+  if (activeSession.current_speaker_id === req.params.id) {
+    const remainingSpeaker = getNextQueueSpeaker(speaker.event_id, req.params.id);
+    const nextStatus = remainingSpeaker ? 'live' : 'presentations_complete';
+    db.prepare("UPDATE live_sessions SET current_speaker_id = NULL, current_started_at = NULL, voting_open = 0, status = ?, updated_at = datetime('now') WHERE event_id = ?").run(nextStatus, speaker.event_id);
+  }
+  const payload = getLiveSessionPayload(speaker.event_id);
+  res.json({ ok: true, payload });
+});
+
+app.delete('/api/speakers/:id/skip', requireAuth, requireAdmin, (req, res) => {
+  const speaker = db.prepare('SELECT * FROM speakers WHERE id = ?').get(req.params.id);
+  if (!speaker) return res.status(404).json({ error: 'Speaker not found' });
+  db.prepare("UPDATE speakers SET status = 'scheduled', skipped_at = NULL WHERE id = ?").run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -3554,8 +4432,9 @@ function seedPlatformData() {
     { name: 'noderunner', project_title: 'LNConnect', description: 'A simple dashboard for monitoring your Lightning node channels, capacity, and routing fees in real-time.', duration: 5, github_url: 'https://github.com/noderunner/lnconnect', demo_url: '', deck_id: deckId2 },
   ];
   for (const s of speakers) {
-    db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      crypto.randomUUID(), eventId, s.name, s.project_title, s.description, s.duration, s.github_url || null, s.demo_url || null, s.deck_id || null
+    const nextQueuePosition = (db.prepare('SELECT COALESCE(MAX(queue_position), 0) + 1 as next_pos FROM speakers WHERE event_id = ?').get(eventId)?.next_pos) || 1;
+    db.prepare(`INSERT INTO speakers (id, event_id, name, project_title, description, duration, github_url, demo_url, deck_id, queue_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      crypto.randomUUID(), eventId, s.name, s.project_title, s.description, s.duration, s.github_url || null, s.demo_url || null, s.deck_id || null, nextQueuePosition
     );
   }
 

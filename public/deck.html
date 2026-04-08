@@ -38,15 +38,19 @@
     <div id="deckZapStats"></div>
 
     <div class="viewer-actions">
-      <button class="vote-btn" id="voteBtn"><span class="arrow">▲</span><span id="voteCount">0</span></button>
-      <button class="btn btn-zap" id="zapDeckBtn" onclick="openZapModal()" style="display:none">⚡ Zap</button>
-      <button class="btn btn-ghost" id="downloadBtn">⬇ Download</button>
-      <a class="btn btn-ghost" id="githubBtn" href="#" target="_blank" rel="noopener" style="display:none">⌥ GitHub</a>
-      <a class="btn btn-ghost" id="demoBtn" href="#" target="_blank" rel="noopener" style="display:none">↗ Live Demo</a>
-      <button class="btn btn-ghost" id="embedBtn">⟨/⟩ Embed Code</button>
-      <button class="btn btn-ghost" id="linkBtn">🔗 Copy Link</button>
-      <button class="btn btn-ghost" id="qrBtn" onclick="toggleQR()">⬡ QR Code</button>
-      <button class="btn btn-danger" id="deleteBtn" style="display:none;">🗑 Delete</button>
+      <div class="viewer-actions-group viewer-actions-group-primary">
+        <button class="vote-btn" id="voteBtn"><span class="arrow">▲</span><span id="voteCount">0</span></button>
+        <button class="btn btn-zap" id="zapDeckBtn" onclick="openZapModal()" style="display:none">⚡ Zap</button>
+        <button class="btn btn-ghost" id="downloadBtn">⬇ Download</button>
+      </div>
+      <div class="viewer-actions-group viewer-actions-group-links">
+        <a class="btn btn-ghost" id="githubBtn" href="#" target="_blank" rel="noopener" style="display:none">⌥ GitHub</a>
+        <a class="btn btn-ghost" id="demoBtn" href="#" target="_blank" rel="noopener" style="display:none">↗ Live Demo</a>
+        <button class="btn btn-ghost" id="embedBtn">⟨/⟩ Embed Code</button>
+        <button class="btn btn-ghost" id="linkBtn">🔗 Copy Link</button>
+        <button class="btn btn-ghost" id="qrBtn" onclick="toggleQR()">⬡ QR Code</button>
+        <button class="btn btn-danger" id="deleteBtn" style="display:none;">🗑 Delete</button>
+      </div>
     </div>
 
     <div class="embed-box" id="embedBox">
@@ -89,7 +93,7 @@
 
 <div id="zapOverlay" class="zap-overlay">⚡</div>
 
-<footer class="footer">LunarPad — Build. Ship. Earn sats.</footer>
+<footer class="footer"><div class="footer-brand">LunarPad — Build. Ship. Earn sats.</div><div class="footer-links"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">Docs</a><a href="https://github.com/satsdisco/lunarpad/issues" target="_blank" rel="noopener">Changelog</a><a href="https://github.com/satsdisco/lunarpad" target="_blank" rel="noopener">GitHub</a></div></footer>
 
 <script>
   const deckId = window.location.pathname.split('/').pop();

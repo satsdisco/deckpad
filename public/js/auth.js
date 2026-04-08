@@ -27,34 +27,57 @@ async function initAuth(onUser) {
             <div class="notif-list" id="notifList">
               <div class="notif-empty">No notifications yet</div>
             </div>
+            <div class="notif-footer">
+              <a href="/notifications" class="notif-view-all">View all notifications</a>
+            </div>
           </div>
         </div>
         <div class="user-menu">
-          <div class="user-pill" onclick="this.parentElement.querySelector('.user-dropdown').classList.toggle('open')">
+          <button class="user-pill" id="userMenuToggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Open account menu">
             <img src="${data.user.avatar || ''}" alt="" onerror="this.style.display='none'">
             <span>${data.user.name || data.user.email}</span>
-          </div>
-          <div class="user-dropdown">
-            <a href="/profile">My Profile</a>
+            <span class="user-pill-chevron" aria-hidden="true">∨</span>
+          </button>
+          <div class="user-dropdown" id="userDropdown" role="menu">
+            <a href="/profile" role="menuitem">My Profile</a>
             <div class="dev-switcher" id="devSwitcher" style="display:none">
               <div style="padding:4px 10px;font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Switch user</div>
               <a href="/dev/switch/alice" class="dev-switch-btn">Alice (Dev)</a>
               <a href="/dev/switch/bob" class="dev-switch-btn">Bob (Dev)</a>
             </div>
-            <a href="/auth/logout">Sign out</a>
+            <a href="/auth/logout" role="menuitem">Sign out</a>
           </div>
         </div>`;
+
+      const userMenuToggle = document.getElementById('userMenuToggle');
+      const userDropdown = document.getElementById('userDropdown');
+      const syncUserMenuState = (isOpen) => {
+        if (!userDropdown || !userMenuToggle) return;
+        userDropdown.classList.toggle('open', isOpen);
+        userMenuToggle.classList.toggle('open', isOpen);
+        userMenuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      };
 
       // Close dropdowns on outside click
       document.addEventListener('click', e => {
         if (!e.target.closest('.user-menu')) {
-          document.querySelectorAll('.user-dropdown').forEach(d => d.classList.remove('open'));
+          syncUserMenuState(false);
         }
         if (!e.target.closest('.notif-wrapper')) {
           const dd = document.getElementById('notifDropdown');
           if (dd) dd.classList.remove('open');
         }
       });
+
+      if (userMenuToggle) {
+        userMenuToggle.addEventListener('click', e => {
+          e.stopPropagation();
+          syncUserMenuState(!userDropdown.classList.contains('open'));
+        });
+        userMenuToggle.addEventListener('keydown', e => {
+          if (e.key === 'Escape') syncUserMenuState(false);
+        });
+      }
 
       // Bell click
       document.getElementById('notifBell').addEventListener('click', e => {
@@ -92,10 +115,12 @@ async function initAuth(onUser) {
 
 async function pollNotifications() {
   try {
-    const res = await fetch('/api/notifications');
+    const res = await fetch('/api/notifications?limit=7');
     const data = await res.json();
     const badge = document.getElementById('notifBadge');
     const list = document.getElementById('notifList');
+    const footer = document.querySelector('.notif-footer');
+    const footerLink = document.querySelector('.notif-view-all');
     if (!badge || !list) return;
 
     if (data.unread_count > 0) {
@@ -105,21 +130,17 @@ async function pollNotifications() {
       badge.style.display = 'none';
     }
 
+    if (footer) footer.style.display = data.total_count > 0 ? '' : 'none';
+    if (footerLink && Number.isFinite(data.total_count)) {
+      footerLink.textContent = data.total_count > 7 ? `View all notifications (${data.total_count})` : 'View all notifications';
+    }
+
     if (!data.notifications || data.notifications.length === 0) {
       list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
       return;
     }
 
-    list.innerHTML = data.notifications.map(n => {
-      const href = notifHref(n);
-      const time = timeAgo(n.created_at);
-      const icon = n.type === 'comment' ? '💬' : n.type === 'reply' ? '↩️' : n.type === 'vote' ? '👍' : n.type === 'team_join' ? '👥' : '⚡';
-      const text = notifText(n);
-      return `<a class="notif-item${n.read ? '' : ' unread'}" href="${href}" onclick="markRead('${n.id}')" title="${time}">
-        <span class="notif-icon">${icon}</span>
-        <span class="notif-body">${text}<span class="notif-time">${time}</span></span>
-      </a>`;
-    }).join('');
+    list.innerHTML = data.notifications.map(renderNotificationItem).join('');
   } catch(e) { console.warn('Notification poll failed'); }
 }
 
@@ -132,6 +153,25 @@ function notifText(n) {
   if (n.type === 'zap') return `<b>${name}</b> zapped ${target}`;
   if (n.type === 'team_join') return `<b>${name}</b> joined your team on ${target}`;
   return `<b>${name}</b> interacted with ${target}`;
+}
+
+function notifIcon(n) {
+  return n.type === 'comment' ? '💬'
+    : n.type === 'reply' ? '↩️'
+    : n.type === 'vote' ? '👍'
+    : n.type === 'team_join' ? '👥'
+    : '⚡';
+}
+
+function renderNotificationItem(n) {
+  const href = notifHref(n);
+  const time = timeAgo(n.created_at);
+  const icon = notifIcon(n);
+  const text = notifText(n);
+  return `<a class="notif-item${n.read ? '' : ' unread'}" href="${href}" onclick="markRead('${n.id}')" title="${time}">
+    <span class="notif-icon">${icon}</span>
+    <span class="notif-body">${text}<span class="notif-time">${time}</span></span>
+  </a>`;
 }
 
 function notifHref(n) {
