@@ -609,6 +609,18 @@ function switchPresentationsView(deckId, entryPoint) {
   if (iframe) iframe.src = `/presentations/${deckId}/${entryPoint}`;
 }
 
+function renderPresentationsEmptyState(canManage) {
+  const manageCopy = canManage
+    ? 'Upload the first presentation version to populate this tab.'
+    : 'This project has not added any presentation decks yet.';
+  return `
+    <div class="empty-state" style="padding:36px 20px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--glass)">
+      <div class="icon">🪐</div>
+      <h3>No presentations yet</h3>
+      <p>${manageCopy}</p>
+    </div>`;
+}
+
 async function loadDeckVersions(project) {
   const section = document.getElementById('deckVersionsSection');
   const embedSection = document.getElementById('deckEmbedSection');
@@ -616,13 +628,16 @@ async function loadDeckVersions(project) {
   try {
     const res = await fetch('/api/projects/' + project.id + '/decks');
     if (!res.ok) { section.innerHTML = ''; return; }
-    const versions = await res.json();
-    if (!versions.length && !project.deck_id) { section.innerHTML = ''; embedSection.innerHTML = ''; return; }
-
     // Check ownership for upload button
     const meRes = await fetch('/api/me');
     const me = await meRes.json();
     const canManage = me.user && (me.user.id === project.user_id || me.user.is_admin);
+    const versions = await res.json();
+    if (!versions.length && !project.deck_id) {
+      section.innerHTML = renderPresentationsEmptyState(canManage);
+      if (embedSection) embedSection.innerHTML = '';
+      return;
+    }
 
     // Find current deck for embed
     let embedDeckId = null;

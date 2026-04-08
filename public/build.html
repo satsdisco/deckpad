@@ -263,8 +263,8 @@
           <div id="eventHero"></div>
           <div class="event-carousel-wrap">
             <div class="event-carousel" id="eventsGrid"></div>
+            <div class="carousel-counter event-carousel-toolbar" id="eventCounter"></div>
           </div>
-          <div class="carousel-counter" id="eventCounter"></div>
           <div class="mini-cal" id="miniCal"></div>
           <div id="pastEventsSection" style="display:none;margin-top:24px">
             <div class="section-header" style="margin-bottom:12px">
@@ -310,7 +310,7 @@
         <div class="section-block" id="section-bounties">
           <div class="section-header">
             <span class="section-title">Bounties</span>
-            <button class="btn btn-sm" id="createBountyBtn" style="display:none" onclick="document.getElementById('bountyCreateModal').classList.add('open')">+ Create Bounty</button>
+            <button class="btn btn-sm btn-primary create-bounty-cta" id="createBountyBtn" style="display:none" onclick="document.getElementById('bountyCreateModal').classList.add('open')">+ Create Bounty</button>
           </div>
           <div class="bounty-grid" id="bountiesGrid">
             <div class="skeleton-card"><div class="skeleton sk-line sk-w-60" style="height:16px;margin-bottom:10px"></div><div class="skeleton sk-line sk-w-100" style="height:11px;margin-bottom:6px"></div><div class="skeleton sk-line sk-w-40" style="height:22px;margin-top:8px;border-radius:100px"></div></div>
@@ -809,6 +809,9 @@ async function loadBounties() {
       const totalAmt = baseAmt + crowdAmt;
       const hasCrowd = crowdAmt > 0;
       const winner = b.winner_name ? `<div class="bc-winner">🏆 ${esc(b.winner_name)}</div>` : '';
+      const boostAction = b.status === 'completed'
+        ? ''
+        : `<a class="bc-boost-btn" href="/bounty/${esc(b.id)}" onclick="event.stopPropagation()">⚡ Boost</a>`;
       return `
         <div class="bounty-card status-${statusClass}" onclick="window.location.href='/bounty/${esc(b.id)}'" style="cursor:pointer">
           <div class="bc-top">
@@ -831,7 +834,7 @@ async function loadBounties() {
           <div class="bc-footer">
             <span class="bc-builders">👥 ${participantCount} ${participantLabel}</span>
             ${tags ? `<div class="bc-tags">${tags}</div>` : ''}
-            <a class="bc-boost-btn" href="/bounty/${esc(b.id)}" onclick="event.stopPropagation()">⚡ Boost</a>
+            ${boostAction}
           </div>
         </div>`;
     }).join('');

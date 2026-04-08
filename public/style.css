@@ -369,6 +369,14 @@ a:hover { color: var(--accent); }
   margin-bottom: 8px; padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
+.create-bounty-cta {
+  box-shadow: 0 10px 28px rgba(124,92,252,0.22);
+  border-color: rgba(124,92,252,0.5);
+}
+.create-bounty-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(124,92,252,0.28);
+}
 .section-title { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .15em; color: var(--accent); }
 .section-title::before { content: '# '; color: var(--dim); }
 .section-count {
@@ -2092,6 +2100,16 @@ a:hover { color: var(--accent); }
   color: var(--cyan);
 }
 
+.timeline-step.pending .timeline-dot {
+  border-color: rgba(226, 232, 255, 0.34);
+  background: rgba(255,255,255,0.04);
+  color: rgba(236, 240, 255, 0.82);
+}
+
+.timeline-step.pending .timeline-label {
+  color: rgba(236, 240, 255, 0.78);
+}
+
 .timeline-step.gold .timeline-dot {
   border-color: var(--btc-bright);
   background: var(--btc-bright);
@@ -2469,6 +2487,18 @@ a:hover { color: var(--accent); }
   color: var(--gold);
   font-family: var(--font-mono);
   font-weight: 600;
+}
+
+.deadline-chip.soon {
+  background: rgba(212,168,67,.10);
+  border-color: rgba(212,168,67,.28);
+  color: #f0c767;
+}
+
+.deadline-chip.urgent {
+  background: rgba(224,92,92,.10);
+  border-color: rgba(224,92,92,.24);
+  color: #ff8f8f;
 }
 
 .deadline-chip.overdue {

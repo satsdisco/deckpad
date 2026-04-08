@@ -170,7 +170,7 @@ function renderTimeline(status, hasSubmissions) {
 
   return `<div class="bounty-timeline">` + steps.map((step, i) => {
     const isGold = i >= 2; // claimed/completed steps use gold
-    let cls = '';
+    let cls = 'pending';
     if (i < currentIdx) {
       cls = isGold ? 'gold' : 'done';
     } else if (i === currentIdx) {
@@ -390,14 +390,19 @@ async function loadBounty() {
         </div>`;
     }
 
+    const recentContributors = confirmedPayments.filter((payment, index, list) => {
+      const paymentKey = [payment.user_id || '', payment.user_name || '', Number(payment.amount_sats || 0)].join('|');
+      return index === list.findIndex(entry => [entry.user_id || '', entry.user_name || '', Number(entry.amount_sats || 0)].join('|') === paymentKey);
+    });
+
     // Recent funders
     let fundersHtml = '';
-    if (confirmedPayments.length > 0) {
+    if (recentContributors.length > 0) {
       fundersHtml = `
         <div style="margin-bottom:24px">
           <div class="bounty-section-label"># Recent Contributors</div>
           <div class="contributors-list">
-            ${confirmedPayments.slice(0, 8).map(p => `
+            ${recentContributors.slice(0, 8).map(p => `
               <div class="contributor-chip">
                 <span class="contributor-name">${(p.user_id && p.user_name) ? `<a href="/profile/${esc(p.user_id)}" class="profile-link">${esc(p.user_name)}</a>` : esc(p.user_name || 'Anonymous')}</span>
                 <span class="contributor-amount">⚡ ${Number(p.amount_sats).toLocaleString()}</span>
