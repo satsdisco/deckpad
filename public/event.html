@@ -463,7 +463,7 @@
       <div class="form-group"><label>Date</label><input type="date" id="editEventDate"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Time</label><input type="time" id="editEventTime"></div>
+      <div class="form-group"><label>Time</label><input type="text" id="editEventTime" inputmode="numeric" placeholder="18:00 or 6:00pm"></div>
       <div class="form-group"><label>Location</label><input type="text" id="editEventLocation" placeholder="Remote / Dubai / Virtual — Link TBA"></div>
     </div>
     <div class="form-group"><label>Virtual Link (optional)</label><input type="url" id="editEventVirtualLink" placeholder="https://..."></div>
@@ -502,14 +502,36 @@ function closeEventEditModal() {
   document.getElementById('eventEditModal')?.classList.remove('open');
 }
 
+function normalizeEventTimeInput(rawValue) {
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (!value) return '';
+  const compact = value.replace(/\s+/g, '');
+  const match = compact.match(/^(\d{1,2})(?::?(\d{2}))?(am|pm)?$/i);
+  if (!match) return '';
+  let hours = Number(match[1]);
+  const minutes = match[2] === undefined || match[2] === '' ? 0 : Number(match[2]);
+  const meridiem = match[3] ? match[3].toLowerCase() : '';
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || minutes < 0 || minutes > 59) return '';
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return '';
+    if (meridiem === 'am') hours = hours === 12 ? 0 : hours;
+    if (meridiem === 'pm') hours = hours === 12 ? 12 : hours + 12;
+  } else if (hours < 0 || hours > 23) {
+    return '';
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 async function saveEventEdits() {
   const name = document.getElementById('editEventName').value.trim();
   const description = document.getElementById('editEventDesc').value.trim();
   const event_type = document.getElementById('editEventType').value;
   const date = document.getElementById('editEventDate').value;
-  const time = document.getElementById('editEventTime').value;
+  const timeInput = document.getElementById('editEventTime');
+  const time = normalizeEventTimeInput(timeInput.value);
   const location = document.getElementById('editEventLocation').value.trim();
   const virtual_link = document.getElementById('editEventVirtualLink').value.trim();
+  if (timeInput && time) timeInput.value = time;
   if (!name || !date || !time) return alert('Name, date, and time required');
   const res = await fetch('/api/events/' + eventId, {
     method: 'PUT',

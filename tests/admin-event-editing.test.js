@@ -19,6 +19,9 @@ test('event detail page gives admins and organizers an edit path', () => {
   assert.match(html, /function canEditEvent\(ev, currentUser\)/);
   assert.match(html, /id="eventEditModal"/);
   assert.match(html, /saveEventEdits\(\)/);
+  assert.match(html, /function normalizeEventTimeInput\(rawValue\)/);
+  assert.match(html, /placeholder="18:00 or 6:00pm"/);
+  assert.match(html, /const time = normalizeEventTimeInput\(timeInput.value\)/);
   assert.match(html, /fetch\('\/api\/events\/' \+ eventId, \{/);
   assert.match(html, /method: 'PUT'/);
   assert.match(html, /id="operatorEditEventBtn"/);
