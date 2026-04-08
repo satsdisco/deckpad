@@ -217,11 +217,21 @@ async function loadBounty() {
     const winnerLn = winnerData ? winnerData.lightning_address || null : null;
     const payments = paymentsRes && paymentsRes.ok ? await paymentsRes.json() : [];
     const confirmedPaymentsRaw = payments.filter(p => p.payment_type === 'fund' && p.status === 'confirmed');
-    // Deduplicate by user — keep first occurrence (avoid duplicate rendering of same contributor)
+    // Deduplicate by user — keep the entry that has a user_id when one exists for either entry.
+    // This prevents the same person from appearing twice when one payment has a user_id
+    // and another (e.g. an anonymous fund) doesn't, while also deduplicating pure duplicates.
     const seenContrib = new Map();
     for (const p of confirmedPaymentsRaw) {
       const key = p.user_id || p.user_name;
-      if (key && !seenContrib.has(key)) seenContrib.set(key, p);
+      if (key) {
+        if (!seenContrib.has(key)) {
+          seenContrib.set(key, p);
+        } else {
+          const existing = seenContrib.get(key);
+          // Prefer the entry with user_id over one without (more specific identity)
+          if (p.user_id && !existing.user_id) seenContrib.set(key, p);
+        }
+      }
     }
     const confirmedPayments = Array.from(seenContrib.values());
 

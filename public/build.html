@@ -184,7 +184,7 @@
         <div class="section-block" id="section-events">
           <div class="section-header">
             <span class="section-title">Upcoming Events</span>
-            <button class="btn btn-sm" id="createEventBtn" style="display:none" onclick="document.getElementById('eventCreateModal').classList.add('open')">+ Create Event</button>
+            <button class="btn btn-primary" id="createEventBtn" style="display:none" onclick="document.getElementById('eventCreateModal').classList.add('open')">+ Create Event</button>
           </div>
           <div id="eventHero"></div>
           <div class="event-carousel-wrap">
@@ -558,7 +558,7 @@ async function loadBounties() {
       const totalAmt = baseAmt + crowdAmt;
       const hasCrowd = crowdAmt > 0;
       const winner = b.winner_name ? `<div class="bc-winner">🏆 ${esc(b.winner_name)}</div>` : '';
-      const showBoost = b.status !== 'completed';
+      const showBoost = b.status === 'open';
       return `
         <div class="bounty-card status-${statusClass}" onclick="window.location.href='/bounty/${esc(b.id)}'" style="cursor:pointer">
           <div class="bc-top">
