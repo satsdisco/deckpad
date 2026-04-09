@@ -1817,7 +1817,9 @@ app.post('/api/bounties/:id/pay-winner', requireAuth, requireAdmin, async (req, 
   if (!bounty.winner_id) return res.status(400).json({ error: 'No winner set' });
   const winner = db.prepare('SELECT id, name, lightning_address FROM users WHERE id = ?').get(bounty.winner_id);
   if (!winner?.lightning_address) return res.status(400).json({ error: 'Winner has no Lightning address set' });
-  const amount_sats = parseInt(req.body.amount_sats) || bounty.sats_amount;
+  const fundedSats = Number(bounty.funded_amount || 0);
+  const payoutTotal = Number(bounty.sats_amount || 0) + fundedSats;
+  const amount_sats = parseInt(req.body.amount_sats) || payoutTotal;
   if (!amount_sats || amount_sats < 1) return res.status(400).json({ error: 'Invalid payout amount' });
   try {
     const lnData = await resolveLnAddress(winner.lightning_address);

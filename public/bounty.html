@@ -388,7 +388,7 @@ async function loadBounty() {
       if (b.status === 'claimed' && !b.paid_out) {
         const payBtnLabel = winnerLn ? '⚡ Pay Winner via Lightning' : '⚡ Mark as Paid';
         const payBtnAction = winnerLn
-          ? `openPayWinnerModal('${esc(b.id)}', ${Number(b.sats_amount || 0)})`
+          ? `openPayWinnerModal('${esc(b.id)}', ${totalPool})`
           : `adminMarkPaid('${esc(b.id)}')`;
         adminSection += `
           <div class="admin-panel">
