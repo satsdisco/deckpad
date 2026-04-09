@@ -43,6 +43,91 @@ for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+const FALLBACK_EVENT_TIMEZONES = [
+  'UTC',
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'America/Toronto',
+  'America/Mexico_City',
+  'America/Sao_Paulo',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Europe/Madrid',
+  'Europe/Athens',
+  'Africa/Johannesburg',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+const SUPPORTED_EVENT_TIMEZONES = new Set(
+  typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone')
+    : FALLBACK_EVENT_TIMEZONES
+);
+
+function normalizeEventTimezone(value) {
+  const timezone = String(value || '').trim();
+  return timezone && SUPPORTED_EVENT_TIMEZONES.has(timezone) ? timezone : 'UTC';
+}
+
+function getTimeZoneOffsetMinutes(timeZone, utcDate) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(utcDate)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return Math.round((asUtc - utcDate.getTime()) / 60000);
+}
+
+function resolveEventStartUtc(date, time, eventTimezone) {
+  if (!date || !time) return null;
+  const match = String(date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = String(time).match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match || !timeMatch) return null;
+  const [, year, month, day] = match;
+  const [, hour, minute, second = '00'] = timeMatch;
+  const timezone = normalizeEventTimezone(eventTimezone);
+  const naiveUtc = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+  let offsetMinutes = getTimeZoneOffsetMinutes(timezone, new Date(naiveUtc));
+  let resolvedUtc = naiveUtc - (offsetMinutes * 60000);
+  const correctedOffset = getTimeZoneOffsetMinutes(timezone, new Date(resolvedUtc));
+  if (correctedOffset !== offsetMinutes) {
+    offsetMinutes = correctedOffset;
+    resolvedUtc = naiveUtc - (offsetMinutes * 60000);
+  }
+  return new Date(resolvedUtc).toISOString();
+}
+
 // ─── Database ────────────────────────────────────────────────────────────────
 
 // DB persists across restarts — schema uses CREATE TABLE IF NOT EXISTS
@@ -120,15 +205,17 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS events (
-    id           TEXT PRIMARY KEY,
-    name         TEXT NOT NULL,
-    description  TEXT,
-    event_type   TEXT DEFAULT 'demo-day',
-    date         TEXT NOT NULL,
-    time         TEXT,
-    location     TEXT,
-    virtual_link TEXT,
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    id             TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    description    TEXT,
+    event_type     TEXT DEFAULT 'demo-day',
+    date           TEXT NOT NULL,
+    time           TEXT,
+    event_timezone TEXT DEFAULT 'UTC',
+    starts_at_utc  TEXT,
+    location       TEXT,
+    virtual_link   TEXT,
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS speakers (
@@ -431,6 +518,11 @@ const MIGRATIONS = [
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_rsvps_event_user_unique ON rsvps(event_id, user_id) WHERE user_id IS NOT NULL',
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_rsvps_event_email_unique ON rsvps(event_id, lower(email)) WHERE email IS NOT NULL',
   ]},
+  { name: 'v023_event_timezones', sql: [
+    "ALTER TABLE events ADD COLUMN event_timezone TEXT DEFAULT 'UTC'",
+    'ALTER TABLE events ADD COLUMN starts_at_utc TEXT',
+    "UPDATE events SET event_timezone = COALESCE(NULLIF(event_timezone, ''), 'UTC')",
+  ]},
 ];
 
 // Run pending migrations
@@ -449,6 +541,18 @@ for (const m of MIGRATIONS) {
   db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(m.name);
   console.log(`[migration] ✓ ${m.name}`);
 }
+
+function backfillEventStartInstants() {
+  const rows = db.prepare('SELECT id, date, time, event_timezone FROM events').all();
+  const update = db.prepare('UPDATE events SET event_timezone = ?, starts_at_utc = ? WHERE id = ?');
+  for (const row of rows) {
+    const eventTimezone = normalizeEventTimezone(row.event_timezone);
+    const startsAtUtc = resolveEventStartUtc(row.date, row.time, eventTimezone);
+    update.run(eventTimezone, startsAtUtc, row.id);
+  }
+}
+
+backfillEventStartInstants();
 
 // ─── Badge definitions ────────────────────────────────────────────────────────
 
@@ -1268,7 +1372,7 @@ app.delete('/api/bounties/:id/leave', requireAuth, (req, res) => {
 // ─── Events API ───────────────────────────────────────────────────────────────
 
 app.get('/api/events', requireAuth, (req, res) => {
-  const rows = db.prepare("SELECT *, event_type as type FROM events ORDER BY date ASC, time ASC").all();
+  const rows = db.prepare("SELECT *, event_type as type FROM events ORDER BY COALESCE(starts_at_utc, date || 'T' || COALESCE(time, '00:00') || ':00') ASC, date ASC, time ASC").all();
   for (const ev of rows) {
     ev.speakers = db.prepare(`
       SELECT s.*, s.project_title as project, COALESCE(v.vote_count, 0) as votes
@@ -1300,16 +1404,20 @@ app.get('/api/events', requireAuth, (req, res) => {
 });
 
 app.post('/api/events', requireAuth, (req, res) => {
-  const { name, description, event_type, date, time, location, virtual_link } = req.body;
+  const { name, description, event_type, date, time, event_timezone, location, virtual_link } = req.body;
+  const eventType = event_type || req.body.type || 'demo-day';
+  const eventTimezone = normalizeEventTimezone(event_timezone || req.body.eventTimezone || 'UTC');
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!time) return res.status(400).json({ error: 'time required' });
+  const startsAtUtc = resolveEventStartUtc(date, time, eventTimezone);
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO events (id, name, description, event_type, date, time, location, virtual_link)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO events (id, name, description, event_type, date, time, event_timezone, starts_at_utc, location, virtual_link)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, name.trim(), description || null,
-    event_type || 'demo-day', date, time || null,
-    location || null, virtual_link || null
+    eventType, date, time || null,
+    eventTimezone, startsAtUtc, location || null,
+    virtual_link || req.body.virtualLink || null
   );
   res.json({ id });
 });
@@ -1318,20 +1426,25 @@ app.put('/api/events/:id', requireAuth, (req, res) => {
   if (!req.user?.is_admin) return res.status(403).json({ error: 'Admin access required' });
   const event = db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Not found' });
-  const { name, description, event_type, date, time, location, virtual_link } = req.body;
+  const { name, description, event_type, date, time, event_timezone, location, virtual_link } = req.body;
+  const eventType = event_type || req.body.type || 'demo-day';
+  const eventTimezone = normalizeEventTimezone(event_timezone || req.body.eventTimezone || 'UTC');
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!time) return res.status(400).json({ error: 'time required' });
+  const startsAtUtc = resolveEventStartUtc(date, time, eventTimezone);
   db.prepare(`UPDATE events
-    SET name = ?, description = ?, event_type = ?, date = ?, time = ?, location = ?, virtual_link = ?
+    SET name = ?, description = ?, event_type = ?, date = ?, time = ?, event_timezone = ?, starts_at_utc = ?, location = ?, virtual_link = ?
     WHERE id = ?`).run(
       name.trim(),
       description || null,
-      event_type || 'demo-day',
+      eventType,
       date,
       time,
+      eventTimezone,
+      startsAtUtc,
       location || null,
-      virtual_link || null,
+      virtual_link || req.body.virtualLink || null,
       req.params.id
     );
   res.json({ ok: true });
@@ -4539,6 +4652,7 @@ function seedPlatformData() {
     );
   }
 
+  backfillEventStartInstants();
   console.log('[seed] Platform data done.');
 }
 

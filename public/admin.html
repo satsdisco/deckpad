@@ -183,9 +183,13 @@
                 <input id="e-time" type="time">
               </div>
               <div class="form-group">
-                <label for="e-location">Location</label>
-                <input id="e-location" type="text" placeholder="e.g. Austin, TX">
+                <label for="e-timezone">Timezone</label>
+                <select id="e-timezone"></select>
               </div>
+            </div>
+            <div class="form-group">
+              <label for="e-location">Location</label>
+              <input id="e-location" type="text" placeholder="e.g. Austin, TX">
             </div>
             <div class="form-group">
               <label for="e-link">Virtual Link <span style="font-weight:400;color:var(--muted2)">(optional)</span></label>
@@ -301,6 +305,39 @@ function statusBadge(s) {
   const cls = { open: 'status-open', claimed: 'status-claimed', completed: 'status-completed' }[s] || 'status-open';
   return `<span class="status-badge ${cls}">${esc(s)}</span>`;
 }
+
+const EVENT_TIMEZONE_OPTIONS = [
+  'UTC',
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'America/Toronto',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Africa/Johannesburg',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
+function populateEventTimezoneSelect(selectId, selectedValue) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const chosen = selectedValue || viewerTimezone || 'UTC';
+  const options = new Set(EVENT_TIMEZONE_OPTIONS);
+  options.add(chosen);
+  select.innerHTML = Array.from(options).sort().map((tz) => {
+    const selected = tz === chosen ? ' selected' : '';
+    return `<option value="${esc(tz)}"${selected}>${esc(tz)}</option>`;
+  }).join('');
+}
+
+populateEventTimezoneSelect('e-timezone');
 
 /* ─── Bounties ──────────────────────────────────────────────────────────── */
 let eventsCache = [];
@@ -446,11 +483,12 @@ document.getElementById('event-form').addEventListener('submit', async function(
 
   const payload = {
     name,
-    type: document.getElementById('e-type').value,
+    event_type: document.getElementById('e-type').value,
     date,
     time: document.getElementById('e-time').value || null,
+    event_timezone: document.getElementById('e-timezone').value || 'UTC',
     location: document.getElementById('e-location').value.trim() || null,
-    virtualLink: document.getElementById('e-link').value.trim() || null,
+    virtual_link: document.getElementById('e-link').value.trim() || null,
     description: document.getElementById('e-description').value.trim(),
   };
 
@@ -466,6 +504,7 @@ document.getElementById('event-form').addEventListener('submit', async function(
     }
     showFlash(ok, 'Event created successfully!', 'success');
     this.reset();
+    populateEventTimezoneSelect('e-timezone');
     loadEvents();
   } catch (err) {
     showFlash(er, 'Error: ' + err.message, 'error');

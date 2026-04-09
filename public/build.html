@@ -648,9 +648,28 @@ let countdownTimers = {};
 let currentView = 'events';
 
 function getEventStartDate(ev) {
+  if (ev?.starts_at_utc) {
+    const value = new Date(ev.starts_at_utc);
+    if (!Number.isNaN(value.getTime())) return value;
+  }
   if (!ev?.date || !ev?.time) return null;
   const value = new Date(ev.date + ('T' + ev.time));
   return Number.isNaN(value.getTime()) ? null : value;
+}
+
+function formatEventDateSummary(ev) {
+  const start = getEventStartDate(ev);
+  if (!start) return 'TBD';
+  return start.toLocaleDateString('en', { weekday:'short', month:'long', day:'numeric', year:'numeric' });
+}
+
+function formatEventTimeSummary(ev) {
+  const start = getEventStartDate(ev);
+  if (!start) return '';
+  const viewerLabel = start.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZoneName: 'short' });
+  const canonicalZone = ev?.event_timezone || 'UTC';
+  const canonicalLabel = start.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZone: canonicalZone, timeZoneName: 'short' });
+  return viewerLabel === canonicalLabel ? viewerLabel : `${viewerLabel} · ${canonicalLabel}`;
 }
 
 function formatBountyDeadlineState(deadline) {
@@ -1061,7 +1080,8 @@ async function loadEvents() {
         const typeColors = { 'demo-day': 'rgba(124,92,252,0.08)', 'hackathon': 'rgba(57,217,138,0.06)', 'bounty': 'rgba(212,168,67,0.06)' };
         const typeBorders = { 'demo-day': 'rgba(124,92,252,0.15)', 'hackathon': 'rgba(57,217,138,0.12)', 'bounty': 'rgba(212,168,67,0.12)' };
         pastGrid.innerHTML = getVisiblePastEvents(pastEvents).map(ev => {
-          const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'TBD';
+          const dateStr = formatEventDateSummary(ev);
+          const timeStr = formatEventTimeSummary(ev);
           const evType = ev.event_type || ev.type || 'Event';
           const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆' };
           const icon = typeIcons[evType] || '📅';
@@ -1075,7 +1095,7 @@ async function loadEvents() {
               <div style="font-size:0.88rem;font-weight:700;color:var(--text)">${icon} ${esc(ev.name)}</div>
               <span style="font-size:0.55rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);background:rgba(255,255,255,.04);padding:2px 8px;border-radius:100px;border:1px solid var(--border)">✓ Ended</span>
             </div>
-            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">📅 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}${speakerCount ? ' · 🎤 ' + speakerCount + ' presenter' + (speakerCount !== 1 ? 's' : '') : ''}</div>
+            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">📅 ${dateStr}${timeStr ? ' · 🕒 ' + esc(timeStr) : ''}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}${speakerCount ? ' · 🎤 ' + speakerCount + ' presenter' + (speakerCount !== 1 ? 's' : '') : ''}</div>
             ${desc ? `<div style="font-size:0.75rem;color:var(--muted2);line-height:1.5;margin-bottom:8px">${esc(desc)}${ev.description && ev.description.length > 80 ? '…' : ''}</div>` : ''}
             <div style="font-size:0.72rem;color:var(--accent);font-weight:600">${recapLabel}</div>
           </div>`;
@@ -1123,13 +1143,14 @@ function renderHeroBanner(ev) {
   const heroTypeColors = { 'demo-day': '#7c5cfc', 'hackathon': '#39d98a', 'bounty': '#d4a843', 'workshop': '#3CCBDA', 'meetup': '#f472b6' };
   const heroColor = heroTypeColors[evType] || '#7c5cfc';
   const icon = typeIcons[evType] || '📅';
-  const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
+  const dateStr = formatEventDateSummary(ev);
+  const timeStr = formatEventTimeSummary(ev);
   const rawDesc = ev.description || '';
   const desc = rawDesc.length > 120 ? rawDesc.slice(0, 120) + '…' : rawDesc;
   const typeClass = evType === 'demo-day' ? 'type-demo-day' : evType === 'hackathon' ? 'type-hackathon' : evType === 'bounty' ? 'type-bounty' : 'type-default';
   const badgeClass = evType === 'demo-day' ? 'badge-demo-day' : evType === 'hackathon' ? 'badge-hackathon' : evType === 'bounty' ? 'badge-bounty' : 'badge-default';
   const typeLabel = evType.replace(/-/g, ' ').toUpperCase();
-  const evDate = ev.date ? new Date(ev.date) : null;
+  const evDate = getEventStartDate(ev) || (ev.date ? new Date(ev.date) : null);
   const calDay = evDate ? evDate.getDate() : '?';
   const calMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   const calWeekday = evDate ? evDate.toLocaleDateString('en', { weekday: 'short' }) : '';
@@ -1144,7 +1165,7 @@ function renderHeroBanner(ev) {
         <div class="event-hero-type-badge ${badgeClass}">${icon} ${typeLabel}</div>
         <div class="event-hero-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(57,217,138,0.12);border:1px solid rgba(57,217,138,0.25);border-radius:100px;color:#39d98a;font-size:0.65rem;font-weight:800;margin-bottom:10px"><span style="width:6px;height:6px;border-radius:50%;background:#39d98a;animation:live-pulse 1.5s ease infinite"></span> NEXT UP</div>
         <h2 class="event-hero-title">${esc(ev.name)}</h2>
-        ${ev.location ? `<div class="event-hero-meta">📍 ${esc(ev.location)}</div>` : ''}
+        <div class="event-hero-meta">🗓 ${esc(dateStr)}${timeStr ? ` · 🕒 ${esc(timeStr)}` : ''}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
         ${desc ? `<p class="event-hero-desc">${esc(desc)}</p>` : ''}
         ${renderHeroAttendeeStack(ev)}
         <div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Event starts in</div>
@@ -1180,9 +1201,8 @@ function formatSecondaryEventDateLabel(ev) {
 }
 
 function renderEventCard(ev) {
-  const dateStr = ev.date
-    ? new Date(ev.date).toLocaleDateString('en', { weekday:'short', month:'short', day:'numeric', year:'numeric' })
-    : 'TBD';
+  const dateStr = formatEventDateSummary(ev);
+  const timeStr = formatEventTimeSummary(ev);
   const secondaryDateLabel = formatSecondaryEventDateLabel(ev);
   const evType = ev.event_type || ev.type || 'Event';
   const speakerCount = (ev.speakers || []).length;
@@ -1190,7 +1210,7 @@ function renderEventCard(ev) {
   const typeIcons = { 'demo-day': '🎤', 'hackathon': '⚡', 'bounty': '🏆', 'workshop': '🛠', 'meetup': '👥' };
   const color = typeColors[evType] || '#7c5cfc';
   const icon = typeIcons[evType] || '📅';
-  const evDate = ev.date ? new Date(ev.date) : null;
+  const evDate = getEventStartDate(ev) || (ev.date ? new Date(ev.date) : null);
   const cardDay = evDate ? evDate.getDate() : '?';
   const cardMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
   return `
@@ -1207,7 +1227,7 @@ function renderEventCard(ev) {
             <div class="event-name" style="margin-top:8px">${esc(ev.name)}</div>
           </div>
         </div>
-        ${ev.location ? `<div class="event-details" style="margin-top:8px"><span>📍 ${esc(ev.location)}</span></div>` : ''}
+        <div class="event-details" style="margin-top:8px"><span>🗓 ${esc(dateStr)}</span>${timeStr ? `<span>🕒 ${esc(timeStr)}</span>` : ''}${ev.location ? `<span>📍 ${esc(ev.location)}</span>` : ''}</div>
         <div style="display:flex;gap:12px;margin-top:10px;font-size:0.78rem;color:var(--muted)">
           <span>👥 ${speakerCount} speaker${speakerCount !== 1 ? 's' : ''}</span>
         </div>

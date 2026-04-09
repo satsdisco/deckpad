@@ -11,7 +11,7 @@ test('event API exposes an admin edit route with required time validation', () =
   assert.match(server, /app\.put\('\/api\/events\/:id', requireAuth, \(req, res\) => \{/);
   assert.match(server, /if \(!req\.user\?\.is_admin\) return res\.status\(403\)\.json\(\{ error: 'Admin access required' \}\)/);
   assert.match(server, /if \(!time\) return res\.status\(400\)\.json\(\{ error: 'time required' \}\)/);
-  assert.match(server, /UPDATE events[\s\S]*SET name = \?, description = \?, event_type = \?, date = \?, time = \?, location = \?, virtual_link = \?/);
+  assert.match(server, /UPDATE events[\s\S]*SET name = \?, description = \?, event_type = \?, date = \?, time = \?, event_timezone = \?, starts_at_utc = \?, location = \?, virtual_link = \?/);
 });
 
 test('event detail page gives admins and organizers an edit path', () => {

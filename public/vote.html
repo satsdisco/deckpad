@@ -42,15 +42,26 @@ function safeUrl(u) { try { const p = new URL(u).protocol; return (p==='http:'||
 
 let allEvents = [];
 
-function formatStaticEventDate(ev) {
-  if (!ev?.date) return 'Date TBD';
+function getEventStartDate(ev) {
+  if (ev?.starts_at_utc) {
+    const value = new Date(ev.starts_at_utc);
+    if (!Number.isNaN(value.getTime())) return value;
+  }
+  if (!ev?.date) return null;
   const eventDate = new Date(ev.date + (ev.time ? 'T' + ev.time : 'T00:00'));
+  return Number.isNaN(eventDate.getTime()) ? null : eventDate;
+}
+
+function formatStaticEventDate(ev) {
+  const eventDate = ev?.starts_at_utc ? new Date(ev.starts_at_utc) : getEventStartDate(ev);
+  if (!eventDate || Number.isNaN(eventDate.getTime())) return 'Date TBD';
   const dateLabel = eventDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeLabel = eventDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   const now = new Date();
   const statusLabel = eventDate.getTime() < now.getTime()
     ? 'Ended'
     : (ev.location || 'Upcoming');
-  return `${dateLabel} · ${statusLabel}`;
+  return `${dateLabel} · ${timeLabel} · ${statusLabel}`;
 }
 
 // ─── Load and render ──────────────────────────────────────────────────────
@@ -95,9 +106,13 @@ async function loadVotePage() {
 }
 
 function renderEventSection(ev, bounties) {
-  const dateStr = ev.date
-    ? new Date(ev.date).toLocaleDateString('en', { weekday:'long', month:'long', day:'numeric', year:'numeric' })
+  const eventStart = getEventStartDate(ev);
+  const dateStr = eventStart
+    ? eventStart.toLocaleDateString('en', { weekday:'long', month:'long', day:'numeric', year:'numeric' })
     : 'Date TBD';
+  const timeStr = eventStart
+    ? eventStart.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZoneName: 'short' })
+    : '';
   const staticDateLabel = formatStaticEventDate(ev);
 
   const speakers = [...(ev.speakers || [])].sort((a, b) => (b.votes || 0) - (a.votes || 0));
@@ -123,7 +138,7 @@ function renderEventSection(ev, bounties) {
         <div class="event-section-meta">
           <div class="event-section-type">${esc(ev.event_type || ev.type || 'Event')}</div>
           <div class="event-section-heading">${esc(ev.name)}</div>
-          <div class="event-section-date">🗓 ${dateStr}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}</div>
+          <div class="event-section-date">🗓 ${dateStr}${timeStr ? ' · 🕒 ' + esc(timeStr) : ''}${ev.location ? ' · 📍 ' + esc(ev.location) : ''}</div>
           ${prizeHtml}
         </div>
         <div class="event-secondary-date">${esc(staticDateLabel)}</div>

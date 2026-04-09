@@ -514,8 +514,9 @@
     </div>
     <div class="form-row">
       <div class="form-group"><label>Time</label><input type="text" id="editEventTime" inputmode="numeric" placeholder="18:00 or 6:00pm"></div>
-      <div class="form-group"><label>Location</label><input type="text" id="editEventLocation" placeholder="Remote / Dubai / Virtual — Link TBA"></div>
+      <div class="form-group"><label>Timezone</label><select id="editEventTimezone"></select></div>
     </div>
+    <div class="form-group"><label>Location</label><input type="text" id="editEventLocation" placeholder="Remote / Dubai / Virtual — Link TBA"></div>
     <div class="form-group"><label>Virtual Link (optional)</label><input type="url" id="editEventVirtualLink" placeholder="https://..."></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeEventEditModal()">Cancel</button>
@@ -531,6 +532,63 @@ let eventData = null;
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
 function timeAgo(ds) { const m = Math.floor((Date.now()-new Date(ds).getTime())/60000); if(m<1)return 'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; return Math.floor(h/24)+'d ago'; }
 function initials(name) { return String(name || '?').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase(); }
+const EVENT_TIMEZONE_OPTIONS = [
+  'UTC',
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'America/Toronto',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Africa/Johannesburg',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+function getViewerTimezone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+  catch { return 'UTC'; }
+}
+function populateEventTimezoneSelect(selectId, selectedValue) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const chosen = selectedValue || getViewerTimezone();
+  const options = new Set(EVENT_TIMEZONE_OPTIONS);
+  options.add(chosen);
+  select.innerHTML = Array.from(options).sort().map((tz) => `<option value="${esc(tz)}"${tz === chosen ? ' selected' : ''}>${esc(tz)}</option>`).join('');
+}
+function getEventStartDate(ev) {
+  if (ev?.starts_at_utc) {
+    const value = new Date(ev.starts_at_utc);
+    if (!Number.isNaN(value.getTime())) return value;
+  }
+  if (!ev?.date || !ev?.time) return null;
+  const value = new Date(ev.date + ('T' + ev.time));
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+function formatEventDateSummary(ev) {
+  const start = getEventStartDate(ev);
+  if (!start) return ev?.date || 'TBD';
+  return start.toLocaleDateString('en', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+function formatLocalizedViewerTime(ev) {
+  const start = getEventStartDate(ev);
+  if (!start) return '';
+  const viewerTimezone = getViewerTimezone();
+  const viewerLabel = start.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZone: viewerTimezone, timeZoneName: 'short' });
+  if (viewerTimezone === (ev?.event_timezone || 'UTC')) return viewerLabel;
+  return `${viewerLabel} local time`;
+}
+function formatCanonicalEventTime(ev) {
+  const start = getEventStartDate(ev);
+  if (!start) return ev?.time || 'Time TBD';
+  const eventTimezone = ev?.event_timezone || 'UTC';
+  return start.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZone: eventTimezone, timeZoneName: 'short' });
+}
 function canEditEvent(ev, currentUser) {
   const capabilities = ev?.viewer_event_capabilities || currentUser?.capabilities || {};
   return !!(currentUser && (currentUser.is_admin || capabilities.event_edit));
@@ -543,6 +601,7 @@ function openEventEditModal() {
   document.getElementById('editEventType').value = eventData.event_type || eventData.type || 'demo-day';
   document.getElementById('editEventDate').value = eventData.date || '';
   document.getElementById('editEventTime').value = eventData.time || '';
+  populateEventTimezoneSelect('editEventTimezone', eventData.event_timezone || 'UTC');
   document.getElementById('editEventLocation').value = eventData.location || '';
   document.getElementById('editEventVirtualLink').value = eventData.virtual_link || '';
   document.getElementById('eventEditModal')?.classList.add('open');
@@ -579,6 +638,7 @@ async function saveEventEdits() {
   const date = document.getElementById('editEventDate').value;
   const timeInput = document.getElementById('editEventTime');
   const time = normalizeEventTimeInput(timeInput.value);
+  const event_timezone = document.getElementById('editEventTimezone').value || 'UTC';
   const location = document.getElementById('editEventLocation').value.trim();
   const virtual_link = document.getElementById('editEventVirtualLink').value.trim();
   if (timeInput && time) timeInput.value = time;
@@ -586,7 +646,7 @@ async function saveEventEdits() {
   const res = await fetch('/api/events/' + eventId, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description, event_type, date, time, location, virtual_link })
+    body: JSON.stringify({ name, description, event_type, date, time, event_timezone, location, virtual_link })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return alert(data.error || 'Failed to update event');
@@ -607,12 +667,6 @@ function renderEventOperatorControls(ev, currentUser) {
         <button class="btn btn-primary" id="operatorEditEventBtn">✏️ Edit Event</button>
       </div>
     </div>`;
-}
-
-function getEventStartDate(ev) {
-  if (!ev?.date || !ev?.time) return null;
-  const value = new Date(ev.date + ('T' + ev.time));
-  return Number.isNaN(value.getTime()) ? null : value;
 }
 
 function renderAttendeesSection(rsvpPayload) {
@@ -771,7 +825,9 @@ async function loadEvent() {
 
     document.title = ev.name + ' — LunarPad';
 
-    const dateStr = ev.date ? new Date(ev.date).toLocaleDateString('en', { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : 'TBD';
+    const dateStr = formatEventDateSummary(ev);
+    const localizedViewerTime = formatLocalizedViewerTime(ev);
+    const canonicalEventTime = formatCanonicalEventTime(ev);
     const speakers = (ev.speakers || []).sort((a,b) => (b.votes||0) - (a.votes||0));
     const liveSummary = ev.live_summary || null;
     const resultsArtifact = ev.event_results || null;
@@ -808,9 +864,11 @@ async function loadEvent() {
 
     const endedBadge = isEnded ? ' <span style="color:var(--muted);font-weight:400">(ended)</span>' : '';
     const locationSpan = ev.location ? '<span>📍 ' + esc(ev.location) + '</span>' : '';
+    const timeSummarySpan = canonicalEventTime ? '<span>🕒 ' + esc(canonicalEventTime) + '</span>' : '';
+    const viewerTimeSpan = localizedViewerTime && localizedViewerTime !== canonicalEventTime ? '<span>🌍 ' + esc(localizedViewerTime) + '</span>' : '';
     const prizeDiv = prizePool ? '<div class="event-prize">⚡ ' + prizePool.toLocaleString() + ' sats prize pool</div>' : '';
 
-    const evDate = ev.date ? new Date(ev.date) : null;
+    const evDate = getEventStartDate(ev) || (ev.date ? new Date(ev.date) : null);
     const calDay = evDate ? evDate.getDate() : '?';
     const calMonth = evDate ? evDate.toLocaleDateString('en', { month: 'short' }).toUpperCase() : '';
     const calWeekday = evDate ? evDate.toLocaleDateString('en', { weekday: 'short' }) : '';
@@ -827,6 +885,9 @@ async function loadEvent() {
           <div class="event-hero-type">${esc(evTypeRaw)}${endedBadge}</div>
           <div class="event-hero-name">${esc(ev.name)}</div>
           <div class="event-hero-meta">
+            <span>🗓 ${esc(dateStr)}</span>
+            ${timeSummarySpan}
+            ${viewerTimeSpan}
             ${locationSpan}
             ${attendingBadge}
           </div>
@@ -949,12 +1010,17 @@ async function loadEvent() {
     if (ev.date && !isEnded) {
       const calBtn = document.getElementById('addToCalBtn');
       if (calBtn) {
-        const start = ev.date.replace(/-/g, '') + (ev.time ? 'T' + ev.time.replace(/:/g, '') + '00' : '');
-        const end = ev.date.replace(/-/g, '') + (ev.time ? 'T' + String(parseInt(ev.time) + 2).padStart(2,'0') + ev.time.slice(2).replace(/:/g, '') + '00' : '');
-        const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.name)}&dates=${start}/${end}&details=${encodeURIComponent(ev.description || '')}&location=${encodeURIComponent(ev.location || '')}`;
-        calBtn.href = gcalUrl;
-        calBtn.target = '_blank';
-        calBtn.style.display = '';
+        const startDate = getEventStartDate(ev);
+        if (startDate) {
+          const endDate = new Date(startDate.getTime() + (2 * 60 * 60 * 1000));
+          const compactUtc = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+          const start = compactUtc(startDate);
+          const end = compactUtc(endDate);
+          const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.name)}&dates=${start}/${end}&ctz=${encodeURIComponent(ev.event_timezone || 'UTC')}&details=${encodeURIComponent(ev.description || '')}&location=${encodeURIComponent(ev.location || '')}`;
+          calBtn.href = gcalUrl;
+          calBtn.target = '_blank';
+          calBtn.style.display = '';
+        }
       }
     }
 
