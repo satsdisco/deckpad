@@ -856,16 +856,13 @@ async function loadEvent() {
     // Build action buttons outside template to avoid nested backtick issues
     const btnStyle = 'style="font-size:0.82rem;padding:7px 16px;border-radius:20px"';
     let heroActionsHtml = '';
-    if (isEnded) {
-      heroActionsHtml = '<button class="btn" id="shareBtn" ' + btnStyle + '>Share</button>';
-    } else {
+    if (!isEnded) {
       heroActionsHtml = userRsvp
         ? '<button class="btn btn-confirmed" id="rsvpToggle" ' + btnStyle + ' onclick="cancelRsvp()" aria-pressed="true">✓ Going</button>'
         : '<button class="btn" id="rsvpToggle" ' + btnStyle + ' onclick="doRsvp()" aria-pressed="false">👥 RSVP</button>';
       heroActionsHtml += userPresenting
         ? '<button class="btn btn-confirmed" id="presentToggle" ' + btnStyle + ' aria-pressed="true">🎤 Presenting</button>'
         : '<button class="btn btn-primary" id="presentToggle" ' + btnStyle + ' aria-pressed="false">🎤 Present</button>';
-      heroActionsHtml += '<button class="btn" id="shareBtn" ' + btnStyle + '>Share</button>';
       heroActionsHtml += '<a class="btn" id="addToCalBtn" ' + btnStyle + ' style="display:none;font-size:0.82rem;padding:7px 16px;border-radius:20px">📅 Calendar</a>';
       if (canEditThisEvent) {
         heroActionsHtml += '<button class="btn" id="editEventBtn" ' + btnStyle + '>✏️ Edit Event</button>';
@@ -969,27 +966,10 @@ async function loadEvent() {
     loadDecksDropdown();
 
     // Wire up action buttons (avoiding inline onclick with escaping issues)
-    const shareBtn = document.getElementById('shareBtn');
     const editEventBtn = document.getElementById('editEventBtn');
     const operatorEditEventBtn = document.getElementById('operatorEditEventBtn');
     if (editEventBtn) editEventBtn.onclick = () => openEventEditModal();
     if (operatorEditEventBtn) operatorEditEventBtn.onclick = () => openEventEditModal();
-    if (shareBtn) shareBtn.onclick = function() {
-      if (navigator.share) {
-        navigator.share({ title: ev.name + ' — LunarPad', url: window.location.href }).catch(() => {});
-      } else {
-        navigator.clipboard.writeText(window.location.href).then(() => {
-          shareBtn.textContent = '\u2713 Copied!'; setTimeout(() => shareBtn.textContent = 'Share', 1800);
-          // Toast
-          const toast = document.createElement('div');
-          toast.textContent = '\ud83d\udcce Link copied to clipboard!';
-          toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 20px;border-radius:100px;font-size:0.82rem;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s';
-          document.body.appendChild(toast);
-          requestAnimationFrame(() => toast.style.opacity = '1');
-          setTimeout(() => { toast.style.opacity = '0'; toast.addEventListener('transitionend', () => toast.remove()); }, 2000);
-        }).catch(() => {});
-      }
-    };
     // RSVP toggle handled via inline onclick (doRsvp/cancelRsvp)
     const presentToggle = document.getElementById('presentToggle');
     if (presentToggle) presentToggle.onclick = openSpeakerSignupModal;

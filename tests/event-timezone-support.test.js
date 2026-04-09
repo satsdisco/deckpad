@@ -37,3 +37,11 @@ test('calendar link uses canonical UTC instants without pinning Google Calendar 
   assert.match(eventHtml, /dates=\$\{start\}\/\$\{end\}/);
   assert.doesNotMatch(eventHtml, /&ctz=\$\{encodeURIComponent\(ev\.event_timezone \|\| 'UTC'\)\}/);
 });
+
+test('event hero keeps calendar access but does not render a share button', () => {
+  const eventHtml = read('public', 'event.html');
+  assert.match(eventHtml, /heroActionsHtml \+= '<a class="btn" id="addToCalBtn"/);
+  assert.doesNotMatch(eventHtml, /id="shareBtn"/);
+  assert.doesNotMatch(eventHtml, /navigator\.share\(/);
+  assert.doesNotMatch(eventHtml, /Link copied to clipboard!/);
+});
