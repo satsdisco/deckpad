@@ -1016,7 +1016,7 @@ async function loadEvent() {
           const compactUtc = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
           const start = compactUtc(startDate);
           const end = compactUtc(endDate);
-          const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.name)}&dates=${start}/${end}&ctz=${encodeURIComponent(ev.event_timezone || 'UTC')}&details=${encodeURIComponent(ev.description || '')}&location=${encodeURIComponent(ev.location || '')}`;
+          const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.name)}&dates=${start}/${end}&details=${encodeURIComponent(ev.description || '')}&location=${encodeURIComponent(ev.location || '')}`;
           calBtn.href = gcalUrl;
           calBtn.target = '_blank';
           calBtn.style.display = '';

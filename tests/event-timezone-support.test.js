@@ -30,3 +30,10 @@ test('admin and event-detail UIs expose timezone selection and localized event-t
   assert.match(buildHtml, /function getEventStartDate\(ev\) \{[\s\S]*starts_at_utc/);
   assert.match(voteHtml, /function formatStaticEventDate\(ev\) \{[\s\S]*starts_at_utc/);
 });
+
+test('calendar link uses canonical UTC instants without pinning Google Calendar to the creator timezone', () => {
+  const eventHtml = read('public', 'event.html');
+  assert.match(eventHtml, /const compactUtc = \(date\) => date\.toISOString\(\)\.replace\(\/\[-:\]\/g, ''\)\.replace\(\/\\\.\\d\{3\}Z\$\/, 'Z'\)/);
+  assert.match(eventHtml, /dates=\$\{start\}\/\$\{end\}/);
+  assert.doesNotMatch(eventHtml, /&ctz=\$\{encodeURIComponent\(ev\.event_timezone \|\| 'UTC'\)\}/);
+});
