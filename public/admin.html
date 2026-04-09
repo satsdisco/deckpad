@@ -179,13 +179,17 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="e-time">Time</label>
+                <label for="e-time">Start Time</label>
                 <input id="e-time" type="time">
               </div>
               <div class="form-group">
-                <label for="e-timezone">Timezone</label>
-                <select id="e-timezone"></select>
+                <label for="e-end-time">End Time <span style="font-weight:400;color:var(--muted2)">(optional)</span></label>
+                <input id="e-end-time" type="time">
               </div>
+            </div>
+            <div class="form-group">
+              <label for="e-timezone">Timezone</label>
+              <select id="e-timezone"></select>
             </div>
             <div class="form-group">
               <label for="e-location">Location</label>
@@ -486,6 +490,7 @@ document.getElementById('event-form').addEventListener('submit', async function(
     event_type: document.getElementById('e-type').value,
     date,
     time: document.getElementById('e-time').value || null,
+    end_time: document.getElementById('e-end-time').value || null,
     event_timezone: document.getElementById('e-timezone').value || 'UTC',
     location: document.getElementById('e-location').value.trim() || null,
     virtual_link: document.getElementById('e-link').value.trim() || null,

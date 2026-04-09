@@ -513,9 +513,10 @@
       <div class="form-group"><label>Date</label><input type="date" id="editEventDate"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Time</label><input type="text" id="editEventTime" inputmode="numeric" placeholder="18:00 or 6:00pm"></div>
-      <div class="form-group"><label>Timezone</label><select id="editEventTimezone"></select></div>
+      <div class="form-group"><label>Start Time</label><input type="text" id="editEventTime" inputmode="numeric" placeholder="18:00 or 6:00pm"></div>
+      <div class="form-group"><label>End Time</label><input type="text" id="editEventEndTime" inputmode="numeric" placeholder="20:00 or 8:00pm"></div>
     </div>
+    <div class="form-group"><label>Timezone</label><select id="editEventTimezone"></select></div>
     <div class="form-group"><label>Location</label><input type="text" id="editEventLocation" placeholder="Remote / Dubai / Virtual — Link TBA"></div>
     <div class="form-group"><label>Virtual Link (optional)</label><input type="url" id="editEventVirtualLink" placeholder="https://..."></div>
     <div class="modal-actions">
@@ -589,6 +590,15 @@ function formatCanonicalEventTime(ev) {
   const eventTimezone = ev?.event_timezone || 'UTC';
   return start.toLocaleTimeString('en', { hour:'numeric', minute:'2-digit', timeZone: eventTimezone, timeZoneName: 'short' });
 }
+function getEventEndDate(ev) {
+  if (ev?.ends_at_utc) {
+    const value = new Date(ev.ends_at_utc);
+    if (!Number.isNaN(value.getTime())) return value;
+  }
+  if (!ev?.date || !ev?.end_time) return null;
+  const value = new Date(ev.date + ('T' + ev.end_time));
+  return Number.isNaN(value.getTime()) ? null : value;
+}
 function canEditEvent(ev, currentUser) {
   const capabilities = ev?.viewer_event_capabilities || currentUser?.capabilities || {};
   return !!(currentUser && (currentUser.is_admin || capabilities.event_edit));
@@ -601,6 +611,7 @@ function openEventEditModal() {
   document.getElementById('editEventType').value = eventData.event_type || eventData.type || 'demo-day';
   document.getElementById('editEventDate').value = eventData.date || '';
   document.getElementById('editEventTime').value = eventData.time || '';
+  document.getElementById('editEventEndTime').value = eventData.end_time || '';
   populateEventTimezoneSelect('editEventTimezone', eventData.event_timezone || 'UTC');
   document.getElementById('editEventLocation').value = eventData.location || '';
   document.getElementById('editEventVirtualLink').value = eventData.virtual_link || '';
@@ -637,16 +648,19 @@ async function saveEventEdits() {
   const event_type = document.getElementById('editEventType').value;
   const date = document.getElementById('editEventDate').value;
   const timeInput = document.getElementById('editEventTime');
+  const endTimeInput = document.getElementById('editEventEndTime');
   const time = normalizeEventTimeInput(timeInput.value);
+  const end_time = endTimeInput && endTimeInput.value ? normalizeEventTimeInput(endTimeInput.value) : '';
   const event_timezone = document.getElementById('editEventTimezone').value || 'UTC';
   const location = document.getElementById('editEventLocation').value.trim();
   const virtual_link = document.getElementById('editEventVirtualLink').value.trim();
   if (timeInput && time) timeInput.value = time;
+  if (endTimeInput && end_time) endTimeInput.value = end_time;
   if (!name || !date || !time) return alert('Name, date, and time required');
   const res = await fetch('/api/events/' + eventId, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description, event_type, date, time, event_timezone, location, virtual_link })
+    body: JSON.stringify({ name, description, event_type, date, time, end_time: end_time || null, event_timezone, location, virtual_link })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return alert(data.error || 'Failed to update event');
@@ -825,9 +839,6 @@ async function loadEvent() {
 
     document.title = ev.name + ' — LunarPad';
 
-    const dateStr = formatEventDateSummary(ev);
-    const localizedViewerTime = formatLocalizedViewerTime(ev);
-    const canonicalEventTime = formatCanonicalEventTime(ev);
     const speakers = (ev.speakers || []).sort((a,b) => (b.votes||0) - (a.votes||0));
     const liveSummary = ev.live_summary || null;
     const resultsArtifact = ev.event_results || null;
@@ -863,9 +874,6 @@ async function loadEvent() {
     heroActionsHtml += '<a class="btn" id="goLiveBtn" style="display:none;font-size:0.82rem;padding:7px 16px;border-radius:20px" href="#" target="_blank">🔴 Go Live</a>';
 
     const endedBadge = isEnded ? ' <span style="color:var(--muted);font-weight:400">(ended)</span>' : '';
-    const locationSpan = ev.location ? '<span>📍 ' + esc(ev.location) + '</span>' : '';
-    const timeSummarySpan = canonicalEventTime ? '<span>🕒 ' + esc(canonicalEventTime) + '</span>' : '';
-    const viewerTimeSpan = localizedViewerTime && localizedViewerTime !== canonicalEventTime ? '<span>🌍 ' + esc(localizedViewerTime) + '</span>' : '';
     const prizeDiv = prizePool ? '<div class="event-prize">⚡ ' + prizePool.toLocaleString() + ' sats prize pool</div>' : '';
 
     const evDate = getEventStartDate(ev) || (ev.date ? new Date(ev.date) : null);
@@ -884,13 +892,6 @@ async function loadEvent() {
         <div style="flex:1;min-width:0">
           <div class="event-hero-type">${esc(evTypeRaw)}${endedBadge}</div>
           <div class="event-hero-name">${esc(ev.name)}</div>
-          <div class="event-hero-meta">
-            <span>🗓 ${esc(dateStr)}</span>
-            ${timeSummarySpan}
-            ${viewerTimeSpan}
-            ${locationSpan}
-            ${attendingBadge}
-          </div>
           ${prizeDiv}
           <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--muted2);text-transform:uppercase;letter-spacing:.1em;margin:16px 0 4px" id="countdownLabel">Event starts in</div>
           <div class="event-hero-countdown">
@@ -1012,7 +1013,7 @@ async function loadEvent() {
       if (calBtn) {
         const startDate = getEventStartDate(ev);
         if (startDate) {
-          const endDate = new Date(startDate.getTime() + (2 * 60 * 60 * 1000));
+          const endDate = ev.ends_at_utc ? new Date(ev.ends_at_utc) : (ev.end_time ? getEventEndDate(ev) : new Date(startDate.getTime() + (2 * 60 * 60 * 1000)));
           const compactUtc = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
           const start = compactUtc(startDate);
           const end = compactUtc(endDate);

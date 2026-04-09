@@ -211,8 +211,10 @@ db.exec(`
     event_type     TEXT DEFAULT 'demo-day',
     date           TEXT NOT NULL,
     time           TEXT,
+    end_time       TEXT,
     event_timezone TEXT DEFAULT 'UTC',
     starts_at_utc  TEXT,
+    ends_at_utc    TEXT,
     location       TEXT,
     virtual_link   TEXT,
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -523,6 +525,10 @@ const MIGRATIONS = [
     'ALTER TABLE events ADD COLUMN starts_at_utc TEXT',
     "UPDATE events SET event_timezone = COALESCE(NULLIF(event_timezone, ''), 'UTC')",
   ]},
+  { name: 'v024_event_end_times', sql: [
+    'ALTER TABLE events ADD COLUMN end_time TEXT',
+    'ALTER TABLE events ADD COLUMN ends_at_utc TEXT',
+  ]},
 ];
 
 // Run pending migrations
@@ -543,12 +549,13 @@ for (const m of MIGRATIONS) {
 }
 
 function backfillEventStartInstants() {
-  const rows = db.prepare('SELECT id, date, time, event_timezone FROM events').all();
-  const update = db.prepare('UPDATE events SET event_timezone = ?, starts_at_utc = ? WHERE id = ?');
+  const rows = db.prepare('SELECT id, date, time, end_time, event_timezone FROM events').all();
+  const update = db.prepare('UPDATE events SET event_timezone = ?, starts_at_utc = ?, ends_at_utc = ? WHERE id = ?');
   for (const row of rows) {
     const eventTimezone = normalizeEventTimezone(row.event_timezone);
     const startsAtUtc = resolveEventStartUtc(row.date, row.time, eventTimezone);
-    update.run(eventTimezone, startsAtUtc, row.id);
+    const endsAtUtc = row.end_time ? resolveEventStartUtc(row.date, row.end_time, eventTimezone) : null;
+    update.run(eventTimezone, startsAtUtc, endsAtUtc, row.id);
   }
 }
 
@@ -1404,20 +1411,21 @@ app.get('/api/events', requireAuth, (req, res) => {
 });
 
 app.post('/api/events', requireAuth, (req, res) => {
-  const { name, description, event_type, date, time, event_timezone, location, virtual_link } = req.body;
+  const { name, description, event_type, date, time, end_time, event_timezone, location, virtual_link } = req.body;
   const eventType = event_type || req.body.type || 'demo-day';
   const eventTimezone = normalizeEventTimezone(event_timezone || req.body.eventTimezone || 'UTC');
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!time) return res.status(400).json({ error: 'time required' });
   const startsAtUtc = resolveEventStartUtc(date, time, eventTimezone);
+  const endsAtUtc = end_time ? resolveEventStartUtc(date, end_time, eventTimezone) : null;
   const id = crypto.randomUUID();
-  db.prepare(`INSERT INTO events (id, name, description, event_type, date, time, event_timezone, starts_at_utc, location, virtual_link)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO events (id, name, description, event_type, date, time, end_time, event_timezone, starts_at_utc, ends_at_utc, location, virtual_link)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, name.trim(), description || null,
     eventType, date, time || null,
-    eventTimezone, startsAtUtc, location || null,
-    virtual_link || req.body.virtualLink || null
+    end_time || null, eventTimezone, startsAtUtc, endsAtUtc,
+    location || null, virtual_link || req.body.virtualLink || null
   );
   res.json({ id });
 });
@@ -1426,23 +1434,26 @@ app.put('/api/events/:id', requireAuth, (req, res) => {
   if (!req.user?.is_admin) return res.status(403).json({ error: 'Admin access required' });
   const event = db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Not found' });
-  const { name, description, event_type, date, time, event_timezone, location, virtual_link } = req.body;
+  const { name, description, event_type, date, time, end_time, event_timezone, location, virtual_link } = req.body;
   const eventType = event_type || req.body.type || 'demo-day';
   const eventTimezone = normalizeEventTimezone(event_timezone || req.body.eventTimezone || 'UTC');
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!time) return res.status(400).json({ error: 'time required' });
   const startsAtUtc = resolveEventStartUtc(date, time, eventTimezone);
+  const endsAtUtc = end_time ? resolveEventStartUtc(date, end_time, eventTimezone) : null;
   db.prepare(`UPDATE events
-    SET name = ?, description = ?, event_type = ?, date = ?, time = ?, event_timezone = ?, starts_at_utc = ?, location = ?, virtual_link = ?
+    SET name = ?, description = ?, event_type = ?, date = ?, time = ?, end_time = ?, event_timezone = ?, starts_at_utc = ?, ends_at_utc = ?, location = ?, virtual_link = ?
     WHERE id = ?`).run(
       name.trim(),
       description || null,
       eventType,
       date,
       time,
+      end_time || null,
       eventTimezone,
       startsAtUtc,
+      endsAtUtc,
       location || null,
       virtual_link || req.body.virtualLink || null,
       req.params.id

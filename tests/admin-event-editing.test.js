@@ -11,7 +11,7 @@ test('event API exposes an admin edit route with required time validation', () =
   assert.match(server, /app\.put\('\/api\/events\/:id', requireAuth, \(req, res\) => \{/);
   assert.match(server, /if \(!req\.user\?\.is_admin\) return res\.status\(403\)\.json\(\{ error: 'Admin access required' \}\)/);
   assert.match(server, /if \(!time\) return res\.status\(400\)\.json\(\{ error: 'time required' \}\)/);
-  assert.match(server, /UPDATE events[\s\S]*SET name = \?, description = \?, event_type = \?, date = \?, time = \?, event_timezone = \?, starts_at_utc = \?, location = \?, virtual_link = \?/);
+  assert.match(server, /UPDATE events[\s\S]*SET name = \?, description = \?, event_type = \?, date = \?, time = \?, end_time = \?, event_timezone = \?, starts_at_utc = \?, ends_at_utc = \?, location = \?, virtual_link = \?/);
 });
 
 test('event detail page gives admins and organizers an edit path', () => {
@@ -21,7 +21,9 @@ test('event detail page gives admins and organizers an edit path', () => {
   assert.match(html, /saveEventEdits\(\)/);
   assert.match(html, /function normalizeEventTimeInput\(rawValue\)/);
   assert.match(html, /placeholder="18:00 or 6:00pm"/);
+  assert.match(html, /id="editEventEndTime"/);
   assert.match(html, /const time = normalizeEventTimeInput\(timeInput.value\)/);
+  assert.match(html, /const end_time = endTimeInput && endTimeInput.value \? normalizeEventTimeInput\(endTimeInput.value\) : '';/);
   assert.match(html, /fetch\('\/api\/events\/' \+ eventId, \{/);
   assert.match(html, /method: 'PUT'/);
   assert.match(html, /id="operatorEditEventBtn"/);

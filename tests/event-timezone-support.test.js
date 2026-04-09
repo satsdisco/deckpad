@@ -11,10 +11,10 @@ test('event schema and API retain canonical timezone data and a resolved UTC sta
   assert.match(server, /event_timezone\s+TEXT/);
   assert.match(server, /starts_at_utc\s+TEXT/);
   assert.match(server, /function resolveEventStartUtc\(date, time, eventTimezone\)/);
-  assert.match(server, /const \{ name, description, event_type, date, time, event_timezone, location, virtual_link \} = req\.body;/);
+  assert.match(server, /const \{ name, description, event_type, date, time, end_time, event_timezone, location, virtual_link \} = req\.body;/);
   assert.match(server, /const startsAtUtc = resolveEventStartUtc\(date, time, eventTimezone\)/);
-  assert.match(server, /INSERT INTO events \(id, name, description, event_type, date, time, event_timezone, starts_at_utc, location, virtual_link\)/);
-  assert.match(server, /SET name = \?, description = \?, event_type = \?, date = \?, time = \?, event_timezone = \?, starts_at_utc = \?, location = \?, virtual_link = \?/);
+  assert.match(server, /INSERT INTO events \(id, name, description, event_type, date, time, end_time, event_timezone, starts_at_utc, ends_at_utc, location, virtual_link\)/);
+  assert.match(server, /SET name = \?, description = \?, event_type = \?, date = \?, time = \?, end_time = \?, event_timezone = \?, starts_at_utc = \?, ends_at_utc = \?, location = \?, virtual_link = \?/);
 });
 
 test('admin and event-detail UIs expose timezone selection and localized event-time copy', () => {
