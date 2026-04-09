@@ -16,18 +16,17 @@ test('mobile build layout uses a compact grid nav and trims onboarding density',
   assert.match(css, /\.fab,[\s\S]*display: none !important;/);
 });
 
-test('foyer explains bubble weighting and gives the empty state a real CTA', () => {
+test('foyer keeps the empty-state CTA but removes the extra explainer chrome', () => {
   const html = read('public', 'foyer.html');
   const css = read('public', 'css', 'style.css');
 
-  assert.match(html, /id="foyerLegend"/);
-  assert.match(html, /Bubble size shows sats-backed support\./);
+  assert.doesNotMatch(html, /id="foyerLegend"/);
+  assert.doesNotMatch(html, /id="foyerGuidance"/);
   assert.match(html, /Post the first idea/);
-  assert.match(html, /Bubble size will track votes, sats, or team size once ideas are live\./);
   assert.match(html, /filters\.style\.display = 'none'/);
-  assert.match(css, /\.foyer-legend \{/);
   assert.match(css, /\.foyer-empty-card \{/);
   assert.match(css, /\.foyer-empty-cta \{/);
+  assert.match(css, /\.foyer-container \{[\s\S]*background: transparent;/);
 });
 
 test('decks filters and project deck attachment affordances are more discoverable', () => {

@@ -23,12 +23,14 @@ test('mobile comments and footer avoid cramped mobile controls', () => {
   assert.match(css, /\.fab \{[\s\S]*display: none !important;/);
 });
 
-test('mobile foyer spacing is tuned for stacked empty states and activity', () => {
+test('mobile foyer spacing keeps bubbles centered without a boxed stage', () => {
   const css = read('public', 'css', 'style.css');
+  const html = read('public', 'foyer.html');
 
-  assert.match(css, /\.foyer-guidance \{[\s\S]*display: block;[\s\S]*border-radius: 18px;/);
-  assert.match(css, /\.foyer-filters \{[\s\S]*justify-content: flex-start;/);
-  assert.match(css, /\.foyer-container \{[\s\S]*min-height: 120px;/);
+  assert.doesNotMatch(html, /id="foyerGuidance"/);
+  assert.doesNotMatch(html, /id="foyerLegend"/);
+  assert.match(css, /\.foyer-filters \{[\s\S]*justify-content: center;/);
+  assert.match(css, /\.foyer-container \{[\s\S]*padding: 16px 0;[\s\S]*border: none;[\s\S]*background: transparent;/);
   assert.match(css, /\.foyer-sidebar \{[\s\S]*margin-top: 8px;/);
 });
 

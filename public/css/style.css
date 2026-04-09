@@ -5068,28 +5068,11 @@ body::after {
   color: var(--muted);
   font-size: 0.86rem;
 }
-.foyer-guidance {
-  display: block;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(124,92,252,0.16);
-  background: rgba(124,92,252,0.08);
-  color: var(--text2);
-  font-size: 0.8rem;
-  line-height: 1.6;
-}
-.foyer-legend {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 .foyer-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: flex-start;
+  justify-content: center;
   margin-bottom: 16px;
 }
 .foyer-layout {
@@ -5104,10 +5087,9 @@ body::after {
 }
 .foyer-container {
   min-height: 220px;
-  padding: 18px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.02);
+  padding: 16px 0;
+  border: none;
+  background: transparent;
 }
 .foyer-empty-card {
   display: grid;
