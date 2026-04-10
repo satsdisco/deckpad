@@ -37,7 +37,8 @@ const ADMIN_LN_ADDRESS = 'lunarpad@21m.lol';
 const LNBITS_URL = process.env.LNBITS_URL || 'https://21m.lol';
 const LNBITS_INVOICE_KEY = process.env.LNBITS_INVOICE_KEY || '';
 const LNBITS_ADMIN_KEY = process.env.LNBITS_ADMIN_KEY || '';
-const LNBITS_WEBHOOK_SECRET = process.env.LNBITS_WEBHOOK_SECRET || '';
+const LNBITS_WEBHOOK_SECRET=process.env.LNBITS_WEBHOOK_SECRET || '';
+const EARLY_ADOPTER_CUTOFF_AT = new Date('2026-04-10T23:59:59.999Z');
 
 for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -630,10 +631,8 @@ function checkAndAwardBadges(userId) {
     if (pop) badges.push('popular');
   }
   if (!has('early_adopter')) {
-    const earliest = db.prepare('SELECT MIN(created_at) as first FROM users').get()?.first;
-    if (earliest) {
-      const diff = new Date(user.created_at) - new Date(earliest);
-      if (diff <= 30 * 24 * 60 * 60 * 1000) badges.push('early_adopter');
+    if (user.created_at && new Date(user.created_at) <= EARLY_ADOPTER_CUTOFF_AT) {
+      badges.push('early_adopter');
     }
   }
   if (!has('presenter')) {
