@@ -577,9 +577,30 @@ const BADGES = {
   generous:       { id: 'generous',       emoji: '💰', name: 'Big Spender',         desc: 'Added to 3+ bounty prize pools' },
   popular:        { id: 'popular',        emoji: '🌟', name: 'Popular Project',    desc: 'Received 10+ votes on a project' },
   early_adopter:  { id: 'early_adopter',  emoji: '🚀', name: 'Early Adopter',      desc: 'Joined in the first month' },
+  pioneer:        { id: 'pioneer',        emoji: '🧭', name: 'Pioneer',            desc: 'One of the first five LunarPad users' },
   presenter:      { id: 'presenter',      emoji: '🎤', name: 'Presenter',          desc: 'Presented at a demo day' },
   bounty_hunter:  { id: 'bounty_hunter',  emoji: '🎯', name: 'Bounty Hunter',      desc: 'Completed 3+ bounties' },
 };
+
+function getPioneerUserIds() {
+  return db.prepare('SELECT id FROM users ORDER BY datetime(created_at) ASC, id ASC LIMIT 5').all().map((row) => row.id);
+}
+
+function backfillPioneerBadges() {
+  const pioneerIds = new Set(getPioneerUserIds());
+  const rows = db.prepare('SELECT id, badges FROM users').all();
+  const update = db.prepare('UPDATE users SET badges = ? WHERE id = ?');
+  for (const row of rows) {
+    let badges = [];
+    try { badges = JSON.parse(row.badges || '[]'); } catch { badges = []; }
+    if (pioneerIds.has(row.id) && !badges.includes('pioneer')) {
+      badges.push('pioneer');
+      update.run(JSON.stringify(badges), row.id);
+    }
+  }
+}
+
+backfillPioneerBadges();
 
 function checkAndAwardBadges(userId) {
   const user = db.prepare('SELECT badges, name, created_at FROM users WHERE id = ?').get(userId);
@@ -634,6 +655,10 @@ function checkAndAwardBadges(userId) {
     if (user.created_at && new Date(user.created_at) <= EARLY_ADOPTER_CUTOFF_AT) {
       badges.push('early_adopter');
     }
+  }
+  if (!has('pioneer')) {
+    const pioneerIds = getPioneerUserIds();
+    if (pioneerIds.includes(userId)) badges.push('pioneer');
   }
   if (!has('presenter')) {
     const pres = db.prepare('SELECT s.id FROM speakers s WHERE s.user_id = ? AND s.presented_at IS NOT NULL LIMIT 1').get(userId);

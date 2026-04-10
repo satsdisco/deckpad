@@ -2056,7 +2056,7 @@ function getLeaderboardMyRankCopy(sort, entry, visibleCount) {
 
 function renderLeaderboardRows(data, sort, myId) {
   const maxVal = Math.max(1, ...data.map(u => Number(u.sort_val)));
-  const BADGE_MAP = { first_build:'🔨', first_sats:'⚡', demo_champ:'🏆', streak:'🔥' };
+  const BADGE_MAP = { first_build:'🔨', first_sats:'⚡', demo_champ:'🏆', streak:'🔥', pioneer:'🧭' };
 
   const rankEl = (rank) => {
     if (rank === 1) return `<span class="lb-medal lb-medal-gold">1</span>`;
