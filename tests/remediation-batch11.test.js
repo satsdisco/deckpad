@@ -49,15 +49,16 @@ test('build page onboarding stays focused on the two real setup tasks', () => {
   assert.match(css, /@media \(max-width: 768px\) \{[\s\S]*\.onboarding-progress \{/);
 });
 
-test('profile availability stays hidden until the owner chooses to edit it', () => {
+test('profile keeps replay onboarding access without any availability UI', () => {
   const html = read('public', 'profile.html');
 
-  assert.match(html, /function toggleAvailabilityEditor/);
   assert.match(html, /function replayBuildOnboarding/);
-  assert.match(html, /id="availabilityToggle"/);
-  assert.match(html, /id="availabilitySummary"/);
-  assert.match(html, /id="availabilityEditor" style="display:none/);
-  assert.match(html, /Hide this until you want it public/);
-  assert.match(html, /Set availability/);
+  assert.match(html, /Need to replay the getting-started flow from Build\? Jump back in and reopen it\./);
   assert.match(html, /Replay onboarding/);
+  assert.doesNotMatch(html, /function toggleAvailabilityEditor/);
+  assert.doesNotMatch(html, /availabilityToggle/);
+  assert.doesNotMatch(html, /availabilitySummary/);
+  assert.doesNotMatch(html, /availabilityEditor/);
+  assert.doesNotMatch(html, /Set availability/);
+  assert.doesNotMatch(html, /Hide this until you want it public/);
 });
