@@ -6,14 +6,14 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 
-test('content votes are idempotent add-only so repeat upvotes do not silently erase counts', () => {
+test('content votes stay withdrawable while only notifying on new upvotes', () => {
   assert.match(server, /function toggleContentVote\(type, id, voter, req\) \{/);
-  assert.match(server, /if \(existing\) \{\s*return \{ \.\.\.getVoteState\(type, id, voter\), voted: true \};\s*\}/);
-  assert.doesNotMatch(server, /function toggleContentVote\([\s\S]*?stmts\.removeVote\.run\(type, id, voter\);/);
+  assert.match(server, /if \(existing\) \{\s*stmts\.removeVote\.run\(type, id, voter\);\s*\} else \{\s*stmts\.addVote\.run\(type, id, voter\);\s*notifyVoteTarget\(type, id, req\);\s*\}/);
+  assert.match(server, /return \{ \.\.\.nextState, voted: !existing \};/);
 });
 
-test('event session speaker votes are also idempotent once cast', () => {
+test('event session speaker votes are also withdrawable after being cast', () => {
   assert.match(server, /function toggleEventSessionVote\(type, id, voter, req\) \{/);
-  assert.match(server, /if \(existing\) \{\s*return \{ \.\.\.getVoteState\(type, id, voter\), voted: true \};\s*\}/);
-  assert.doesNotMatch(server, /function toggleEventSessionVote\([\s\S]*?stmts\.removeVote\.run\(type, id, voter\);/);
+  assert.match(server, /if \(existing\) \{\s*stmts\.removeVote\.run\(type, id, voter\);\s*\} else \{\s*stmts\.addVote\.run\(type, id, voter\);\s*notifyVoteTarget\(type, id, req\);\s*\}/);
+  assert.match(server, /return \{ \.\.\.nextState, voted: !existing \};/);
 });
