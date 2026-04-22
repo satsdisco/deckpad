@@ -1781,11 +1781,13 @@ let activeProjectTag = null;
 let activeProjectQuickFilter = 'all';
 let activeProjectSort = 'signal';
 let activeProjectSearch = '';
-const PROJECT_LUNAR_KEYWORDS = ['lunar', 'bitcoin', 'btc', 'lightning', 'lnbits', 'lnurl', 'nostr', 'sats', 'zap', 'wallet', 'cashu', 'fedi'];
+const PROJECT_LUNAR_KEYWORDS = ['lunar'];
+const PROJECT_BITCOIN_KEYWORDS = ['bitcoin', 'btc', 'lightning', 'lnbits', 'lnurl', 'nostr', 'sats', 'zap', 'wallet', 'cashu', 'fedi'];
 const PROJECT_QUICK_FILTERS = [
   { id: 'all', label: 'All projects' },
+  { id: 'lunar_rails', label: 'Lunar Rails' },
+  { id: 'btc', label: 'BTC' },
   { id: 'fun', label: 'Fun' },
-  { id: 'lunar', label: 'Lunar / BTC' },
   { id: 'building', label: 'Building' },
   { id: 'shipped', label: 'Shipped' },
 ];
@@ -1830,12 +1832,22 @@ function getProjectTagList(project) {
   return [];
 }
 
-function isLunarProject(project) {
-  const haystack = [project.name, project.description, project.category, ...(getProjectTagList(project)), project.bounty_title]
+function isLunarRailsProject(project) {
+  const tags = getProjectTagList(project);
+  const haystack = [project.name, project.category, ...tags]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
   return PROJECT_LUNAR_KEYWORDS.some(keyword => haystack.includes(keyword));
+}
+
+function isBitcoinProject(project) {
+  const tags = getProjectTagList(project);
+  const haystack = [project.name, project.description, project.category, ...tags, project.bounty_title]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return PROJECT_BITCOIN_KEYWORDS.some(keyword => haystack.includes(keyword));
 }
 
 function getProjectSignalScore(project) {
@@ -1853,7 +1865,11 @@ function sortProjects(projects) {
   } else if (activeProjectSort === 'newest') {
     sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   } else {
-    sorted.sort((a, b) => getProjectSignalScore(b) - getProjectSignalScore(a));
+    sorted.sort((a, b) => {
+      const lunarPriority = Number(isLunarRailsProject(b)) - Number(isLunarRailsProject(a));
+      if (lunarPriority) return lunarPriority;
+      return getProjectSignalScore(b) - getProjectSignalScore(a);
+    });
   }
   return sorted;
 }
@@ -1870,7 +1886,8 @@ function applyProjectFilters(projects) {
       if (!haystack.includes(normalizedSearch)) return false;
     }
     if (activeProjectQuickFilter === 'fun' && String(project.category || '').toLowerCase() !== 'fun') return false;
-    if (activeProjectQuickFilter === 'lunar' && !isLunarProject(project)) return false;
+    if (activeProjectQuickFilter === 'lunar_rails' && !isLunarRailsProject(project)) return false;
+    if (activeProjectQuickFilter === 'btc' && !isBitcoinProject(project)) return false;
     if (activeProjectQuickFilter === 'building' && String(project.status || '').toLowerCase() !== 'building') return false;
     if (activeProjectQuickFilter === 'shipped' && String(project.status || '').toLowerCase() !== 'shipped') return false;
     if (activeProjectTag) {
@@ -1997,7 +2014,8 @@ function renderProjectCards(projects, totalProjectCount = projects.length) {
       <div class="project-card-stats">
         <span class="project-card-stat">⚡ ${Number(project.total_sats_received || 0).toLocaleString()}</span>
         <span class="project-card-stat">▲ ${Number(project.votes || 0).toLocaleString()}</span>
-        ${isLunarProject(project) ? '<span class="project-card-stat project-card-stat-accent">🌙 Lunar-adjacent</span>' : ''}
+        ${isLunarRailsProject(project) ? '<span class="project-card-stat project-card-stat-accent">🌙 Lunar Rails</span>' : ''}
+        ${!isLunarRailsProject(project) && isBitcoinProject(project) ? '<span class="project-card-stat project-card-stat-accent">₿ BTC</span>' : ''}
       </div>`;
     return `
       <div class="project-card project-card-${statusTone}" id="proj-${esc(project.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
