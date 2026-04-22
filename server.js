@@ -3431,25 +3431,27 @@ function handleVoteSideEffects(type, id, wasExisting) {
 function toggleContentVote(type, id, voter, req) {
   const existing = stmts.hasVoted.get(type, id, voter);
   if (existing) {
-    return { ...getVoteState(type, id, voter), voted: true };
+    stmts.removeVote.run(type, id, voter);
+  } else {
+    stmts.addVote.run(type, id, voter);
+    notifyVoteTarget(type, id, req);
   }
-  stmts.addVote.run(type, id, voter);
-  notifyVoteTarget(type, id, req);
-  handleVoteSideEffects(type, id, false);
+  handleVoteSideEffects(type, id, !!existing);
   const nextState = getVoteState(type, id, voter);
-  return { ...nextState, voted: true };
+  return { ...nextState, voted: !existing };
 }
 
 function toggleEventSessionVote(type, id, voter, req) {
   assertEventSessionVoteAllowed(type, id);
   const existing = stmts.hasVoted.get(type, id, voter);
   if (existing) {
-    return { ...getVoteState(type, id, voter), voted: true };
+    stmts.removeVote.run(type, id, voter);
+  } else {
+    stmts.addVote.run(type, id, voter);
+    notifyVoteTarget(type, id, req);
   }
-  stmts.addVote.run(type, id, voter);
-  notifyVoteTarget(type, id, req);
   const nextState = getVoteState(type, id, voter);
-  return { ...nextState, voted: true };
+  return { ...nextState, voted: !existing };
 }
 
 app.post('/api/vote', requireAuth, (req, res) => {
