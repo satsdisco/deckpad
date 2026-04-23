@@ -270,6 +270,92 @@ function setSubmissionMode(mode) {
   window._submissionMode = mode;
 }
 
+function submissionTypeLabel(type) {
+  return {
+    file: 'Uploaded File',
+    markdown: 'Markdown/Context File',
+    link: 'Links / PR / Repo',
+    project: 'Project-backed Solution',
+    mixed: 'Mixed Evidence',
+  }[type] || 'Solution';
+}
+
+function summarizeSubmissionPreview(submission) {
+  if (submission.summary) return submission.summary;
+  if (submission.attachment && submission.attachment.name) return `Attached file: ${submission.attachment.name}`;
+  if (submission.content_markdown) return submission.content_markdown.slice(0, 180);
+  if (Array.isArray(submission.links) && submission.links.length) {
+    return submission.links.map(link => link.label || link.url).join(' · ');
+  }
+  return 'No preview added yet';
+}
+
+function renderSubmissionLinks(submission) {
+  const links = [];
+  if (submission.linked_project && submission.linked_project.id) {
+    links.push(`<a href="/project/${esc(submission.linked_project.id)}" class="btn" style="padding:7px 12px;font-size:0.74rem">Open Project</a>`);
+  }
+  if (submission.linked_deck && submission.linked_deck.id) {
+    links.push(`<a href="/deck/${esc(submission.linked_deck.id)}" class="btn" style="padding:7px 12px;font-size:0.74rem">Open Deck</a>`);
+  }
+  if (submission.attachment && submission.attachment.url) {
+    links.push(`<a href="${submission.attachment.url}" target="_blank" rel="noopener" class="btn" style="padding:7px 12px;font-size:0.74rem">Open File</a>`);
+  }
+  (submission.links || []).forEach((link) => {
+    links.push(`<a href="${esc(link.url)}" target="_blank" rel="noopener" class="btn" style="padding:7px 12px;font-size:0.74rem">${esc(link.label || 'Open Link')}</a>`);
+  });
+  return links.join('');
+}
+
+function closeSubmissionReview() {
+  document.getElementById('submissionReviewModal').classList.remove('open');
+}
+
+function openSubmissionReview(index) {
+  const submission = Array.isArray(window._bountySubmissions) ? window._bountySubmissions[index] : null;
+  if (!submission) return;
+  const reviewActions = window._bountyViewerIsAdmin
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
+         <button class="btn" onclick="updateSubmissionReview('${esc(submission.id)}', 'under_review')">Mark Under Review</button>
+         <button class="btn btn-primary" onclick="updateSubmissionReview('${esc(submission.id)}', 'approved')">Approve</button>
+         <button class="btn btn-danger" onclick="updateSubmissionReview('${esc(submission.id)}', 'rejected')">Reject</button>
+       </div>`
+    : '';
+  document.getElementById('submissionReviewBody').innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <div style="font-size:1rem;font-weight:800;color:var(--text)">${esc(submission.title || 'Untitled submission')}</div>
+        <div style="font-size:0.78rem;color:var(--muted2);margin-top:6px">${esc(submissionTypeLabel(submission.submission_type))} · by ${esc(submission.submitter_name || 'Anonymous')}</div>
+      </div>
+      <span class="submission-card-status">${esc(submission.status || 'submitted')}</span>
+    </div>
+    ${submission.summary ? `<div style="font-size:0.86rem;color:var(--text2);line-height:1.6;margin-bottom:14px">${esc(submission.summary)}</div>` : ''}
+    ${submission.content_markdown ? `<div style="padding:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--glass);white-space:pre-wrap;font-size:0.82rem;color:var(--text2);line-height:1.6;margin-bottom:14px">${esc(submission.content_markdown)}</div>` : ''}
+    ${submission.attachment ? `<div style="font-size:0.82rem;color:var(--text2);margin-bottom:14px">Attached file: <strong>${esc(submission.attachment.name || 'file')}</strong></div>` : ''}
+    ${renderSubmissionLinks(submission) ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${renderSubmissionLinks(submission)}</div>` : ''}
+    ${reviewActions}
+  `;
+  document.getElementById('submissionReviewModal').classList.add('open');
+}
+
+async function updateSubmissionReview(submissionId, status) {
+  try {
+    const res = await fetch('/api/bounty-submissions/' + submissionId + '/review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not update review state');
+    }
+    closeSubmissionReview();
+    loadBounty();
+  } catch (err) {
+    alert(err.message || 'Could not update review state');
+  }
+}
+
 // ─── Render Page ──────────────────────────────────────────────────────────
 
 let _editableBounty = null;
