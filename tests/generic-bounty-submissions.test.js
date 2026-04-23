@@ -22,6 +22,7 @@ test('server exposes file-upload and project-backed bounty submission flows', ()
   assert.match(server, /app\.post\('\/api\/bounties\/:id\/submissions\/file', requireAuth, submissionUpload\.single\('file'\)/);
   assert.match(server, /attachment_name, attachment_path, attachment_mime, attachment_size, status/);
   assert.match(server, /const submissionFileUrl = `\/submission-files\/\$\{submissionId\}\/\$\{safeAttachmentName\}`/);
+  assert.match(server, /endsWith\(ext\)/);
   assert.match(server, /if \(bounty_id\) \{[\s\S]*INSERT INTO bounty_submissions \([\s\S]*submission_type, title, summary, project_id, deck_id, status/);
 });
 

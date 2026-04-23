@@ -1588,7 +1588,7 @@ app.post('/api/bounties/:id/submissions/file', requireAuth, submissionUpload.sin
   }
   const submissionId = crypto.randomUUID();
   const ext = path.extname(req.file.originalname).toLowerCase();
-  const safeAttachmentName = `${String(req.file.originalname || 'submission').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'submission'}${String(req.file.originalname || '').toLowerCase().endswith(ext) ? '' : ext}`;
+  const safeAttachmentName = `${String(req.file.originalname || 'submission').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'submission'}${String(req.file.originalname || '').toLowerCase().endsWith(ext) ? '' : ext}`;
   const submissionDir = path.join(SUBMISSION_FILES_DIR, submissionId);
   fs.mkdirSync(submissionDir, { recursive: true });
   const storedPath = path.join(submissionDir, safeAttachmentName);
