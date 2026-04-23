@@ -32,6 +32,7 @@ const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const THUMBNAILS_DIR = path.join(ROOT, 'thumbnails');
 const TEMP_DIR = path.join(ROOT, 'temp');
 const AVATARS_DIR = path.join(ROOT, 'avatars');
+const SUBMISSION_FILES_DIR = path.join(ROOT, 'submission-files');
 const DB_PATH = path.join(ROOT, 'deckpad.db');
 const ADMIN_LN_ADDRESS = 'lunarpad@21m.lol';
 const LNBITS_URL = process.env.LNBITS_URL || 'https://21m.lol';
@@ -39,7 +40,7 @@ const LNBITS_INVOICE_KEY = process.env.LNBITS_INVOICE_KEY || '';
 const LNBITS_ADMIN_KEY = process.env.LNBITS_ADMIN_KEY || '';
 const LNBITS_WEBHOOK_SECRET = process.env.LNBITS_WEBHOOK_SECRET || '';
 
-for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR, AVATARS_DIR]) {
+for (const dir of [UPLOADS_DIR, THUMBNAILS_DIR, TEMP_DIR, AVATARS_DIR, SUBMISSION_FILES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -217,6 +218,10 @@ db.exec(`
     links_json       TEXT,
     project_id       TEXT,
     deck_id          TEXT,
+    attachment_name  TEXT,
+    attachment_path  TEXT,
+    attachment_mime  TEXT,
+    attachment_size  INTEGER DEFAULT 0,
     status           TEXT NOT NULL DEFAULT 'submitted',
     review_notes     TEXT,
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -565,6 +570,10 @@ const MIGRATIONS = [
       links_json TEXT,
       project_id TEXT,
       deck_id TEXT,
+      attachment_name TEXT,
+      attachment_path TEXT,
+      attachment_mime TEXT,
+      attachment_size INTEGER DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'submitted',
       review_notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -572,6 +581,12 @@ const MIGRATIONS = [
     )`,
     'CREATE INDEX IF NOT EXISTS idx_bounty_submissions_bounty ON bounty_submissions(bounty_id, created_at)',
     'CREATE INDEX IF NOT EXISTS idx_bounty_submissions_user ON bounty_submissions(user_id, bounty_id, created_at)',
+  ]},
+  { name: 'v027_bounty_submission_files', sql: [
+    'ALTER TABLE bounty_submissions ADD COLUMN attachment_name TEXT',
+    'ALTER TABLE bounty_submissions ADD COLUMN attachment_path TEXT',
+    'ALTER TABLE bounty_submissions ADD COLUMN attachment_mime TEXT',
+    'ALTER TABLE bounty_submissions ADD COLUMN attachment_size INTEGER DEFAULT 0',
   ]},
 ];
 
@@ -849,6 +864,17 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(ROOT, 'public'), { index: false }));
 app.use('/thumbnails', express.static(THUMBNAILS_DIR));
 app.use('/avatars', express.static(AVATARS_DIR));
+
+app.get('/submission-files/:submissionId/:filename', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT attachment_name, attachment_path FROM bounty_submissions WHERE id = ?').get(req.params.submissionId);
+  if (!row || !row.attachment_path) return res.status(404).json({ error: 'Not found' });
+  const expectedName = path.basename(row.attachment_name || row.attachment_path);
+  if (req.params.filename !== expectedName) return res.status(404).json({ error: 'Not found' });
+  const fullPath = path.resolve(row.attachment_path);
+  const allowedRoot = path.resolve(SUBMISSION_FILES_DIR);
+  if (!fullPath.startsWith(allowedRoot + path.sep) && fullPath !== allowedRoot) return res.status(404).json({ error: 'Not found' });
+  res.sendFile(fullPath);
+});
 
 // ─── Presentation file serving (sandboxed) ───────────────────────────────────
 
@@ -1140,6 +1166,16 @@ const upload = multer({
   },
 });
 
+const submissionUpload = multer({
+  dest: TEMP_DIR,
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.ppt', '.pptx', '.md', '.pdf'].includes(ext)) cb(null, true);
+    else cb(new Error('Only .ppt, .pptx, .md, or .pdf files are accepted'));
+  },
+});
+
 const avatarUpload = multer({
   dest: TEMP_DIR,
   limits: { fileSize: 2 * 1024 * 1024 },
@@ -1409,6 +1445,12 @@ function serializeBountySubmission(row) {
       id: row.deck_id,
       title: row.deck_title || null,
     } : null,
+    attachment: row.attachment_path ? {
+      name: row.attachment_name || null,
+      mime: row.attachment_mime || null,
+      size: Number(row.attachment_size || 0),
+      url: `/submission-files/${row.id}/${encodeURIComponent(row.attachment_name || path.basename(row.attachment_path || 'file'))}`,
+    } : null,
   };
 }
 
@@ -1520,6 +1562,59 @@ app.post('/api/bounties/:id/submissions', requireAuth, (req, res) => {
     LIMIT 1
   `).get(submissionId);
   res.json(serializeBountySubmission(created));
+});
+
+app.post('/api/bounties/:id/submissions/file', requireAuth, submissionUpload.single('file'), (req, res) => {
+  const bounty = db.prepare('SELECT id, status FROM bounties WHERE id = ?').get(req.params.id);
+  if (!bounty) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(404).json({ error: 'Bounty not found' });
+  }
+  if (bounty.status !== 'open') {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(409).json({ error: 'Bounty is not open for submissions' });
+  }
+  const joined = db.prepare('SELECT id FROM bounty_participants WHERE bounty_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!joined) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(403).json({ error: 'Join the bounty before submitting a solution' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const title = String(req.body.title || '').trim();
+  const summary = String(req.body.summary || '').trim();
+  if (!title) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: 'title required' });
+  }
+  const submissionId = crypto.randomUUID();
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  const safeAttachmentName = `${String(req.file.originalname || 'submission').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'submission'}${String(req.file.originalname || '').toLowerCase().endswith(ext) ? '' : ext}`;
+  const submissionDir = path.join(SUBMISSION_FILES_DIR, submissionId);
+  fs.mkdirSync(submissionDir, { recursive: true });
+  const storedPath = path.join(submissionDir, safeAttachmentName);
+  fs.renameSync(req.file.path, storedPath);
+  const submissionFileUrl = `/submission-files/${submissionId}/${safeAttachmentName}`;
+  db.prepare(`
+    INSERT INTO bounty_submissions (
+      id, bounty_id, user_id, submitter_name, submission_type, title, summary,
+      attachment_name, attachment_path, attachment_mime, attachment_size, status
+    ) VALUES (?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, 'submitted')
+  `).run(
+    submissionId,
+    req.params.id,
+    req.user.id,
+    req.user.name || req.user.email || 'Anonymous',
+    title,
+    summary || null,
+    req.file.originalname,
+    storedPath,
+    req.file.mimetype || null,
+    Number(req.file.size || 0)
+  );
+  const created = db.prepare('SELECT * FROM bounty_submissions WHERE id = ?').get(submissionId);
+  const payload = serializeBountySubmission(created);
+  payload.attachment.url = submissionFileUrl;
+  res.json(payload);
 });
 
 app.post('/api/bounty-submissions/:id/review', requireAuth, requireAdmin, (req, res) => {
@@ -2720,6 +2815,13 @@ app.post('/api/projects', requireAuth, (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   if (!builder || !builder.trim()) return res.status(400).json({ error: 'builder required' });
   if (isPlaceholderProject({ name, description })) return res.status(400).json({ error: 'Project looks like placeholder content' });
+  if (bounty_id) {
+    const bounty = db.prepare('SELECT id, status FROM bounties WHERE id = ?').get(bounty_id);
+    if (!bounty) return res.status(404).json({ error: 'Bounty not found' });
+    if (bounty.status !== 'open') return res.status(409).json({ error: 'Bounty is not open for submissions' });
+    const joined = db.prepare('SELECT id FROM bounty_participants WHERE bounty_id = ? AND user_id = ?').get(bounty_id, req.user.id);
+    if (!joined) return res.status(403).json({ error: 'Join the bounty before submitting a solution' });
+  }
   const id = crypto.randomUUID();
   const slug = uniqueSlug('projects', toSlug(name.trim()));
   const { deck_id } = req.body;
@@ -2731,6 +2833,20 @@ app.post('/api/projects', requireAuth, (req, res) => {
     category || null, bounty_id || null, req.user?.id || null, deck_id || null,
     repo_url || repo || null, demo_url || demo || null, slug
   );
+  if (bounty_id) {
+    db.prepare(`INSERT INTO bounty_submissions (
+      id, bounty_id, user_id, submitter_name, submission_type, title, summary, project_id, deck_id, status
+    ) VALUES (?, ?, ?, ?, 'project', ?, ?, ?, ?, 'submitted')`).run(
+      crypto.randomUUID(),
+      bounty_id,
+      req.user.id,
+      req.user.name || req.user.email || 'Anonymous',
+      name.trim(),
+      description || null,
+      id,
+      deck_id || null
+    );
+  }
   if (req.user?.id) checkAndAwardBadges(req.user.id);
   res.json({ id, slug });
 });

@@ -44,56 +44,102 @@
 <!-- Zap animation overlay -->
 <div id="zapOverlay" class="zap-overlay">⚡</div>
 
-<!-- Generic Solution Submit Modal -->
+<!-- Bounty Submission Modal -->
 <div class="modal-overlay" id="projectModal">
   <div class="modal-content">
     <button class="modal-close" onclick="this.closest('.modal-overlay').classList.remove('open')">&times;</button>
     <div class="modal-title">Submit Your Solution</div>
     <div id="projBountyLabel" style="display:none;font-size:0.8rem;color:var(--btc-bright);margin-bottom:12px;padding:8px 12px;border:1px solid rgba(242,177,52,.2);border-radius:var(--radius);background:rgba(242,177,52,.05)"></div>
     <input type="hidden" id="projBountyId" value="">
-    <div class="form-row">
+    <div style="font-size:0.82rem;color:var(--text2);line-height:1.5;margin-bottom:12px">Choose how to submit your solution.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn btn-primary" id="submissionModeFileBtn" type="button" onclick="setSubmissionMode('file')">Upload File</button>
+      <button class="btn" id="submissionModeProjectBtn" type="button" onclick="setSubmissionMode('project')">Upload Project</button>
+    </div>
+
+    <div id="fileSubmissionFields">
       <div class="form-group">
-        <label>Solution Title</label>
-        <input type="text" id="solutionTitle" placeholder="Context pack for sponsor onboarding">
+        <label>File Title</label>
+        <input type="text" id="fileSubmissionTitle" placeholder="Sponsor context pack v1">
       </div>
       <div class="form-group">
-        <label>Submission Type</label>
-        <select id="solutionType">
-          <option value="mixed" selected>Mixed Evidence</option>
-          <option value="markdown">Markdown/Context File</option>
-          <option value="link">Links / PR / Repo</option>
-          <option value="project">Project-backed Solution</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Summary</label>
-      <textarea id="solutionSummary" placeholder="What did you submit and why should reviewers open it first?"></textarea>
-    </div>
-    <div class="form-group">
-      <label>Markdown / Detailed Solution</label>
-      <textarea id="solutionMarkdown" placeholder="Paste the markdown, context, or write-up here"></textarea>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Repo URL (optional)</label>
-        <input type="url" id="solutionRepo" placeholder="https://github.com/…">
+        <label>Summary (optional)</label>
+        <textarea id="fileSubmissionSummary" placeholder="What is in this file and what should the reviewer look for?"></textarea>
       </div>
       <div class="form-group">
-        <label>Demo / Doc URL (optional)</label>
-        <input type="url" id="solutionDemo" placeholder="https://…">
+        <label>Upload File</label>
+        <input type="file" id="fileSubmissionInput" accept=".ppt,.pptx,.md,.pdf">
+        <div style="font-size:0.76rem;color:var(--muted2);margin-top:8px">Accepted: .ppt, .pptx, .md, .pdf</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitFileSolution()">Upload File</button>
       </div>
     </div>
-    <div class="form-group">
-      <label>Attach Presentation (optional)</label>
-      <select id="projDeckId"><option value="">None</option></select>
-    </div>
-    <div style="font-size:0.78rem;color:var(--muted2);line-height:1.5;margin-bottom:14px">
-      For lightweight bounties, markdown plus a short summary is enough. For project-style bounties, include repo/demo links or a presentation.
-    </div>
-    <div class="modal-actions">
-      <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSolution()">Submit Solution</button>
+
+    <div id="projectSubmissionFields" style="display:none">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Project Name</label>
+          <input type="text" id="projName" placeholder="My cool project">
+        </div>
+        <div class="form-group">
+          <label>Builder Name</label>
+          <input type="text" id="projBuilder" placeholder="Your name" readonly style="opacity:0.7;cursor:default">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="projDesc" placeholder="What are you building and why?"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Category</label>
+          <select id="projCategory">
+            <option value="">Select category...</option>
+            <option value="tool">Tool</option>
+            <option value="game">Game</option>
+            <option value="fun">Fun / Creative</option>
+            <option value="productivity">Productivity</option>
+            <option value="finance">Finance</option>
+            <option value="social">Social</option>
+            <option value="privacy">Privacy</option>
+            <option value="education">Education</option>
+            <option value="infrastructure">Infrastructure</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="projStatus">
+            <option value="idea">Idea</option>
+            <option value="building" selected>Building</option>
+            <option value="shipped">Shipped</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Tags (comma-separated)</label>
+        <input type="text" id="projTags" placeholder="web, bitcoin, dashboard">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Repo URL (optional)</label>
+          <input type="url" id="projRepo" placeholder="https://github.com/…">
+        </div>
+        <div class="form-group">
+          <label>Demo URL (optional)</label>
+          <input type="url" id="projDemo" placeholder="https://…">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Attach Presentation (optional)</label>
+        <select id="projDeckId"><option value="">None</option></select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="this.closest('.modal-overlay').classList.remove('open')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitProjectSolution()">Upload Project</button>
+      </div>
     </div>
   </div>
 </div>
@@ -210,6 +256,18 @@ function renderTimeline(status, hasSubmissions) {
       <div class="timeline-label">${esc(step.label)}</div>
     </div>`;
   }).join('') + `</div>`;
+}
+
+function setSubmissionMode(mode) {
+  const fileFields = document.getElementById('fileSubmissionFields');
+  const projectFields = document.getElementById('projectSubmissionFields');
+  const fileBtn = document.getElementById('submissionModeFileBtn');
+  const projectBtn = document.getElementById('submissionModeProjectBtn');
+  if (fileFields) fileFields.style.display = mode === 'file' ? 'block' : 'none';
+  if (projectFields) projectFields.style.display = mode === 'project' ? 'block' : 'none';
+  if (fileBtn) fileBtn.className = mode === 'file' ? 'btn btn-primary' : 'btn';
+  if (projectBtn) projectBtn.className = mode === 'project' ? 'btn btn-primary' : 'btn';
+  window._submissionMode = mode;
 }
 
 // ─── Render Page ──────────────────────────────────────────────────────────
@@ -655,30 +713,56 @@ function openSubmitModal(bountyId, bountyTitle) {
   document.getElementById('projBountyId').value = bountyId;
   document.getElementById('projBountyLabel').textContent = 'Submitting for bounty: ' + bountyTitle;
   document.getElementById('projBountyLabel').style.display = 'block';
+  setSubmissionMode(window._submissionMode || 'file');
   document.getElementById('projectModal').classList.add('open');
 }
 
-async function submitSolution() {
-  const title = document.getElementById('solutionTitle').value.trim();
-  const summary = document.getElementById('solutionSummary').value.trim();
-  const content_markdown = document.getElementById('solutionMarkdown').value.trim();
-  const submission_type = document.getElementById('solutionType').value;
-  const repo_url = document.getElementById('solutionRepo').value.trim();
-  const demo_url = document.getElementById('solutionDemo').value.trim();
+async function submitFileSolution() {
+  const title = document.getElementById('fileSubmissionTitle').value.trim();
+  const summary = document.getElementById('fileSubmissionSummary').value.trim();
+  const fileInput = document.getElementById('fileSubmissionInput');
+  const bountyId = document.getElementById('projBountyId').value || '';
+  if (!title) return alert('File title is required');
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) return alert('Please choose a file to upload');
+  try {
+    const body = new FormData();
+    body.append('title', title);
+    body.append('summary', summary);
+    body.append('file', fileInput.files[0]);
+    const res = await fetch('/api/bounties/' + bountyId + '/submissions/file', { method: 'POST', body });
+    if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || 'Upload failed'); }
+    document.getElementById('fileSubmissionTitle').value = '';
+    document.getElementById('fileSubmissionSummary').value = '';
+    fileInput.value = '';
+    document.getElementById('projectModal').classList.remove('open');
+    loadBounty();
+  } catch (err) {
+    alert(err.message || 'Upload failed');
+  }
+}
+
+async function submitProjectSolution() {
+  const name = document.getElementById('projName').value.trim();
+  const builder = document.getElementById('projBuilder').value.trim();
+  const description = document.getElementById('projDesc').value.trim();
+  const status = document.getElementById('projStatus').value;
+  const category = document.getElementById('projCategory').value;
+  const tags = document.getElementById('projTags').value.trim();
+  const repo_url = document.getElementById('projRepo').value.trim() || null;
+  const demo_url = document.getElementById('projDemo').value.trim() || null;
   const deck_id = document.getElementById('projDeckId').value || null;
   const bounty_id = document.getElementById('projBountyId').value || null;
-  const links = [];
-  if (repo_url) links.push({ label: 'Repo', url: repo_url });
-  if (demo_url) links.push({ label: 'Demo / Doc', url: demo_url });
-  if (!title) return alert('Solution title is required');
+  if (!name) return alert('Project name is required');
+  if (!builder) return alert('Builder name is required');
   try {
-    const r = await fetch('/api/bounties/' + bounty_id + '/submissions', {
+    const r = await fetch('/api/projects', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ title, summary, content_markdown, submission_type, links, deck_id }),
+      body: JSON.stringify({ name, builder, description, status, category, tags, repo_url, demo_url, deck_id, bounty_id }),
     });
     if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error || 'Submission failed'); return; }
-    ['solutionTitle','solutionSummary','solutionMarkdown','solutionRepo','solutionDemo'].forEach(id => { document.getElementById(id).value = ''; });
-    document.getElementById('solutionType').value = 'mixed';
+    ['projName','projDesc','projTags','projRepo','projDemo'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('projStatus').value = 'building';
+    document.getElementById('projCategory').value = '';
     document.getElementById('projBountyId').value = '';
     document.getElementById('projBountyLabel').style.display = 'none';
     document.getElementById('projectModal').classList.remove('open');
@@ -919,7 +1003,7 @@ async function openPayWinnerModal(bountyId, satsAmount) {
 </script>
 
 <script src="/js/auth.js"></script>
-<script>initAuth(function() {});</script>
+<script>initAuth(function(user) { var bi = document.getElementById('projBuilder'); if (bi && !bi.value) bi.value = user.name || user.email || ''; });</script>
 
 <script>document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll(".modal-overlay.open").forEach(function(m){m.classList.remove("open")})});</script>
 </body>
