@@ -86,6 +86,17 @@
 #projectsGrid .project-card {
   min-height: 410px;
   max-height: 410px;
+  align-self: stretch;
+}
+#projectsGrid .project-card-media {
+  position: relative;
+  flex: 0 0 auto;
+}
+#projectsGrid .project-card-visual {
+  display: block;
+}
+#projectsGrid .project-card-body {
+  justify-content: flex-start;
 }
 #projectsGrid .project-card-head > div {
   flex: 1;
@@ -2088,7 +2099,7 @@ function renderProjectCards(projects, totalProjectCount = projects.length) {
       </div>`;
     return `
       <div class="project-card project-card-${statusTone}" id="proj-${esc(project.id)}" onclick="if(!event.target.closest('.project-upvote')&&!event.target.closest('.spk-link')&&!event.target.closest('.proj-zap-btn')&&!event.target.closest('.proj-banner-edit-btn'))window.location='/project/'+this.id.replace('proj-','')" style="cursor:pointer">
-        <div style="position:relative">
+        <div class="project-card-media">
           <img class="project-card-visual" src="${visualSrc}" alt="">
           ${editBannerBtn}
         </div>
