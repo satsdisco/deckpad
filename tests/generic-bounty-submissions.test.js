@@ -13,6 +13,8 @@ test('server stores bounty submission file attachment metadata and migration col
   assert.match(server, /attachment_mime TEXT/);
   assert.match(server, /attachment_size\s+INTEGER DEFAULT 0/);
   assert.match(server, /v027_bounty_submission_files/);
+  assert.match(server, /v028_bounty_submission_backfill/);
+  assert.match(server, /INSERT INTO bounty_submissions \([\s\S]*FROM projects p[\s\S]*JOIN bounties b ON b.id = p.bounty_id/);
 });
 
 test('server exposes file-upload and project-backed bounty submission flows', () => {
