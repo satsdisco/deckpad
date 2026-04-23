@@ -588,6 +588,31 @@ const MIGRATIONS = [
     'ALTER TABLE bounty_submissions ADD COLUMN attachment_mime TEXT',
     'ALTER TABLE bounty_submissions ADD COLUMN attachment_size INTEGER DEFAULT 0',
   ]},
+  { name: 'v028_bounty_submission_backfill', sql: [
+    `INSERT INTO bounty_submissions (
+      id, bounty_id, user_id, submitter_name, submission_type, title, summary, project_id, deck_id, status, created_at, updated_at
+    )
+    SELECT lower(hex(randomblob(16))),
+           p.bounty_id,
+           p.user_id,
+           COALESCE(p.builder, 'Anonymous'),
+           'project',
+           p.name,
+           p.description,
+           p.id,
+           p.deck_id,
+           CASE WHEN b.winner_id IS NOT NULL AND b.winner_id = p.user_id THEN 'winner_selected' ELSE 'submitted' END,
+           COALESCE(p.created_at, CURRENT_TIMESTAMP),
+           COALESCE(p.created_at, CURRENT_TIMESTAMP)
+      FROM projects p
+      JOIN bounties b ON b.id = p.bounty_id
+     WHERE p.bounty_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM bounty_submissions bs
+          WHERE bs.project_id = p.id
+             OR (bs.bounty_id = p.bounty_id AND bs.user_id = p.user_id AND bs.submission_type = 'project')
+       )`,
+  ]},
 ];
 
 // Run pending migrations
