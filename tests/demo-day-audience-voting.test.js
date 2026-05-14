@@ -15,14 +15,29 @@ test('server stores a separate event-scoped audience vote and gates admin page s
   assert.match(server, /app\.get\('\/admin',\s+requireAuth, requireAdmin/);
 });
 
-test('server exposes admin open\/close routes and one-vote-per-event audience vote casting', () => {
+test('server auto-crowns winner on audience vote close and persists badge-awardable results', () => {
   const server = read('server.js');
 
-  assert.match(server, /app\.post\('\/api\/events\/:id\/audience-vote\/open', requireAuth, requireAdmin/);
+  assert.match(server, /function getAudienceVoteWinner\(eventId, providedSpeakers = null\)/);
+  assert.match(server, /function finalizeAudienceVoteWinner\(eventId\)/);
   assert.match(server, /app\.post\('\/api\/events\/:id\/audience-vote\/close', requireAuth, requireAdmin/);
-  assert.match(server, /app\.post\('\/api\/events\/:id\/audience-vote', requireAuth/);
-  assert.match(server, /Audience voting is not open for this event/);
-  assert.match(server, /You have already voted in this event/);
+  assert.match(server, /winner: finalized\.audienceVoteState\?\.winner \|\| null/);
+  assert.match(server, /winner_source: winnerSource/);
+  assert.match(server, /audience_favorite/);
+});
+
+test('event page live-refreshes audience vote counts and celebrates the crowned winner', () => {
+  const eventHtml = read('public', 'event.html');
+
+  assert.match(eventHtml, /let audienceVotePollInterval = null;/);
+  assert.match(eventHtml, /function startAudienceVotePolling\(\)/);
+  assert.match(eventHtml, /function refreshAudienceVoteState\(\)/);
+  assert.match(eventHtml, /audienceVotePollInterval = setInterval\(/);
+  assert.match(eventHtml, /function celebrateAudienceWinner\(winner\)/);
+  assert.match(eventHtml, /launchWinnerConfetti\(\)/);
+  assert.match(eventHtml, /showWinnerToast\(/);
+  assert.match(eventHtml, /Winner crowned/);
+  assert.match(eventHtml, /Demo Day Champion \+ Audience Favorite/);
 });
 
 test('event page separates lineup support upvotes from post-event audience winner voting', () => {
@@ -33,5 +48,4 @@ test('event page separates lineup support upvotes from post-event audience winne
   assert.match(eventHtml, /Open winner voting/);
   assert.match(eventHtml, /The upvotes in the lineup do not decide the winner/);
   assert.match(eventHtml, /Upvote for lineup support\. This does not decide the event winner\./);
-  assert.match(eventHtml, /Use this upvote for lineup support only\./);
 });
