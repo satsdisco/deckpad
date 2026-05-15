@@ -1297,10 +1297,12 @@ async function loadEvents() {
       const start = getEventStartDate(ev);
       return !start || start >= now;
     });
-    const pastEvents = eventsData.filter(ev => {
-      const start = getEventStartDate(ev);
-      return start && start < now;
-    });
+    const pastEvents = eventsData
+      .filter(ev => {
+        const start = getEventStartDate(ev);
+        return start && start < now;
+      })
+      .sort((a, b) => getEventStartDate(b) - getEventStartDate(a));
 
     if (!upcomingEvents.length && !pastEvents.length) {
       grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="icon">📅</div><h3>No upcoming events</h3><p>Nothing scheduled yet — stay tuned</p></div>`;
