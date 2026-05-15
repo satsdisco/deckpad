@@ -49,3 +49,9 @@ test('event page separates lineup support upvotes from post-event audience winne
   assert.match(eventHtml, /The upvotes in the lineup do not decide the winner/);
   assert.match(eventHtml, /Upvote for lineup support\. This does not decide the event winner\./);
 });
+
+test('event page actually renders the audience vote section into the event detail view', () => {
+  const eventHtml = read('public', 'event.html');
+
+  assert.match(eventHtml, /\$\{renderAudienceVoteSection\(ev, currentUser\)\}/);
+});

@@ -1317,6 +1317,7 @@ async function loadEvent(options = {}) {
       ${hasResults ? `<div class="event-tab-view active" id="tab-results">${resultsHtml}</div>` : ''}
 
       <div class="event-tab-view ${hasResults ? '' : 'active'}" id="tab-lineup">
+        ${renderAudienceVoteSection(ev, currentUser)}
         <div id="speakerRows">
           ${speakers.length
             ? speakers.map((sp, i) => renderSpeaker(sp, i+1)).join('')
